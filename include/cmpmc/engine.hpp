@@ -22,6 +22,7 @@ struct SimStats {
     uint64_t decays_L_to_TT       = 0;
     uint64_t decays_L_to_LT       = 0;
     uint64_t surface_refls        = 0;
+    uint64_t surface_downconversions = 0;
     uint64_t sensor_hits          = 0;
     uint64_t killed_tracks        = 0;
 
@@ -55,6 +56,7 @@ struct SimStats {
         decays_L_to_TT       += r.decays_L_to_TT;
         decays_L_to_LT       += r.decays_L_to_LT;
         surface_refls        += r.surface_refls;
+        surface_downconversions += r.surface_downconversions;
         sensor_hits          += r.sensor_hits;
         killed_tracks        += r.killed_tracks;
         charge_steps         += r.charge_steps;
@@ -541,8 +543,26 @@ public:
                 stats.surface_refls++;
                 trk.pos += bhit.inward_normal * 1e-11;
 
-                const double p_spec = surf.specular_prob(trk.energy);
-                if (rng.uniform() < p_spec) {
+                const auto split = surf.reflection_split(trk.energy);
+                const double u_refl = rng.uniform();
+                if (u_refl < split.p_anh) {
+                    // Surface-mediated anharmonic decay (G4CMPPhononBoundaryProcess:
+                    // G4CMPAnharmonicDecay::DoDecay, both daughters Lambertian)
+                    stats.surface_downconversions++;
+                    const bool tt = rng.uniform() < lattice_.config().fTT_frac;
+                    const double x = tt ? lattice_.sample_tt_energy_fraction(rng)
+                                        : lattice_.sample_lt_energy_fraction(rng);
+                    const PhononMode m1 = tt ? lattice_.sample_transverse_mode(rng) : PhononMode::L;
+                    const PhononMode m2 = lattice_.sample_transverse_mode(rng);
+                    const Vec3 k2 = sample_inward_wavevector(m2, bhit.inward_normal, rng);
+                    stack.push_back(make_track(trk.pos, k2, m2, (1.0 - x) * trk.energy, trk.time, trk.weight));
+                    trk.energy = x * trk.energy;
+                    trk.mode   = m1;
+                    trk.k_dir  = sample_inward_wavevector(m1, bhit.inward_normal, rng);
+                    const auto kin = lattice_.map_k_to_vg(m1, trk.k_dir);
+                    trk.vg_dir = kin.vg_dir;
+                    trk.vg_mag = kin.vg_mag;
+                } else if (u_refl < split.p_anh + split.p_spec) {
                     Vec3 k_refl = trk.k_dir - bhit.inward_normal * (2.0 * trk.k_dir.dot(bhit.inward_normal));
                     auto kin = lattice_.map_k_to_vg(trk.mode, k_refl);
                     if (kin.vg_dir.dot(bhit.inward_normal) <= 1e-6) {

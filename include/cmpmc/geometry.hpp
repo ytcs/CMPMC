@@ -52,9 +52,36 @@ struct SurfaceProperty {
         return acc;
     }
 
+    // Frequency-independent specular probability used where the polynomials do not
+    // apply (G4CMP MaterialPropertiesTable "specProb"; G4CMPSurfaceProperty ctor pSpecProb)
+    double spec_prob_const = 0.0;
+
+    struct ReflectionSplit { double p_spec, p_diff, p_anh; };
+
+    // Phonon reflection branching exactly as G4CMPSurfaceProperty::{Specular,Diffuse,
+    // Anharmonic}ReflProb + G4CMPPhononBoundaryProcess::DoReflection (normalised):
+    //   f > anh_cutoff:                p_anh = 0, p_diff = 1 - specProb, p_spec = specProb
+    //   refl_cutoff < f <= anh_cutoff: p_anh = P_anh(f), p_diff = P_diff(refl_cutoff),
+    //                                  p_spec = 1 - p_diff - p_anh
+    //   f <= refl_cutoff:              polynomials P_spec, P_diff, P_anh at f
+    inline ReflectionSplit reflection_split(double energy_eV) const noexcept {
+        const double f = (energy_eV / units::h_Planck) / units::GHz;
+        const double anh = (anh_coeffs.empty() || f > anh_cutoff) ? 0.0 : eval_poly(anh_coeffs, f);
+        double diff;
+        if (diff_coeffs.empty() || f > anh_cutoff) diff = 1.0 - spec_prob_const;
+        else diff = eval_poly(diff_coeffs, std::min(f, refl_cutoff));
+        double spec;
+        if (spec_coeffs.empty() || f > refl_cutoff) spec = 1.0 - diff - anh;
+        else spec = eval_poly(spec_coeffs, f);
+        spec = std::max(0.0, spec); diff = std::max(0.0, diff);
+        const double a = std::max(0.0, anh);
+        const double norm = spec + diff + a;
+        if (norm <= 0.0) return {0.0, 1.0, 0.0};
+        return {spec / norm, diff / norm, a / norm};
+    }
+
     inline double specular_prob(double energy_eV) const noexcept {
-        const double f_ghz = std::min((energy_eV / units::h_Planck) / units::GHz, refl_cutoff);
-        return std::clamp(eval_poly(spec_coeffs, f_ghz), 0.0, 1.0);
+        return reflection_split(energy_eV).p_spec;
     }
 
     // Standard G4CMP examples/phonon Top/Bottom Aluminum sensor surface

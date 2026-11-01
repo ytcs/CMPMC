@@ -4,6 +4,7 @@
 #include "cmpmc/materials/config_reader.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
+#include "cmpmc/physics/charge_physics.hpp"
 #include "cmpmc/physics/phonon_physics.hpp"
 #include <algorithm>
 #include <array>
@@ -188,14 +189,7 @@ public:
     }
 
     inline double intervalley_rate(double ekin_eV, const Vec3& E_field_Vm) const noexcept {
-        if (valley_rot_.size() < 2 || ekin_eV < cfg_.iv_min_energy) return 0.0;
-        if (cfg_.iv_model == IVRateModel::Quadratic) {
-            const double e0 = cfg_.iv_quad_field;
-            return cfg_.iv_quad_rate * std::pow(e0 * e0 + E_field_Vm.norm2(), 0.5 * cfg_.iv_quad_power);
-        } else {
-            const double E_Vcm = E_field_Vm.norm() * 0.01;
-            return cfg_.iv_lin_rate0 + cfg_.iv_lin_rate1 * std::pow(E_Vcm, cfg_.iv_lin_power);
-        }
+        return physics::intervalley_scattering_rate(ekin_eV, E_field_Vm, cfg_);
     }
 
 private:

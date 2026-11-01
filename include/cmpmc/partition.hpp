@@ -15,6 +15,7 @@ namespace cmpmc {
 // ============================================================================
 struct PartitionOptions {
     bool use_fano_fluctuations   = true;
+    bool use_charge_cloud        = true;  // Distribute e-/h+ pairs in 3D sphere (G4CMPChargeCloud)
     uint32_t max_sampled_pairs   = 1000;  // Downsample e-/h+ pairs above this count (with weight)
     uint32_t max_sampled_phonons = 5000;  // Downsample prompt phonons above this count (with weight)
 };
@@ -102,20 +103,24 @@ public:
         const double total_pair_energy = static_cast<double>(res.n_pairs_true) * (e_gap + 2.0 * init_carrier_ekin);
         res.prompt_phonon_eV = std::max(0.0, total_edep_eV - total_pair_energy);
 
-        // 2. Spawn sampled e-/h+ pairs
+        // 2. Spawn sampled e-/h+ pairs (with optional 3D G4CMPChargeCloud spatial distribution)
         if (res.n_pairs_true > 0) {
             res.n_pairs_sampled = std::min<uint64_t>(res.n_pairs_true, opts.max_sampled_pairs);
             res.charge_weight   = static_cast<double>(res.n_pairs_true) / res.n_pairs_sampled;
             const size_t n_valleys = std::max<size_t>(1, lattice_.num_valleys());
+            const double r_cloud = opts.use_charge_cloud
+                ? physics::ChargeCloudGenerator::compute_cloud_radius(res.n_pairs_true, lattice_.config())
+                : 0.0;
 
             for (uint64_t i = 0; i < res.n_pairs_sampled; ++i) {
+                const Vec3 pair_pos = pos + physics::ChargeCloudGenerator::sample_offset(r_cloud, rng);
                 const uint16_t valley = static_cast<uint16_t>(rng.next_u64() % n_valleys);
                 ChargeTrack elec = charge_phys_.make_charge(
-                    ExcitationType::Electron, pos, rng.isotropic_dir(), init_carrier_ekin, valley, time_s);
+                    ExcitationType::Electron, pair_pos, rng.isotropic_dir(), init_carrier_ekin, valley, time_s);
                 elec.weight = res.charge_weight;
 
                 ChargeTrack hole = charge_phys_.make_charge(
-                    ExcitationType::Hole, pos, rng.isotropic_dir(), init_carrier_ekin, 0, time_s);
+                    ExcitationType::Hole, pair_pos, rng.isotropic_dir(), init_carrier_ekin, 0, time_s);
                 hole.weight = res.charge_weight;
 
                 out_charges.push_back(elec);

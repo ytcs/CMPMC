@@ -182,6 +182,63 @@ public:
         trk.p_eV   = lattice_.map_ekin_to_p_electron(new_valley, p_new_dir, trk.ekin);
     }
 
+    // Check if charge carrier is absorbed at a boundary (G4CMPDriftBoundaryProcess::AbsorbTrack)
+    inline bool should_absorb_boundary(const ChargeTrack& trk,
+                                       const Vec3& inward_normal,
+                                       double prob_charge_abs,
+                                       double min_k_elec,
+                                       double min_k_hole,
+                                       Rng& rng) const noexcept {
+        const Vec3 outward_normal = inward_normal * (-1.0);
+        const Vec3 k_vec = trk.p_eV / units::hbarc;
+        const double k_perp = k_vec.dot(outward_normal);
+        const double min_k  = (trk.type == ExcitationType::Electron) ? min_k_elec : min_k_hole;
+        if (k_perp <= min_k) return false;
+        return rng.uniform() < prob_charge_abs;
+    }
+
+    // Specular or diffuse reflection of a charge carrier at a crystal boundary
+    // conserving kinetic energy in the current valley (G4CMPDriftBoundaryProcess::DoReflection)
+    inline void reflect_at_boundary(ChargeTrack& trk,
+                                    const Vec3& inward_normal,
+                                    double spec_prob,
+                                    Rng& rng) const noexcept {
+        if (rng.uniform() < spec_prob) {
+            // Specular wavevector reflection: k_refl = k - 2 * (k . n) * n
+            const Vec3 k_dir = trk.p_eV.unit();
+            const Vec3 k_refl = (k_dir - inward_normal * (2.0 * k_dir.dot(inward_normal))).unit();
+
+            if (trk.type == ExcitationType::Hole) {
+                trk.p_eV = k_refl * trk.p_eV.norm();
+                return;
+            }
+            const Vec3 p_trial = lattice_.map_ekin_to_p_electron(trk.valley, k_refl, trk.ekin);
+            const Vec3 v_trial = lattice_.map_p_to_vel_electron(trk.valley, p_trial);
+            if (v_trial.dot(inward_normal) > 1e-6) {
+                trk.p_eV = p_trial;
+                return;
+            }
+            // If reflected group velocity is not inward due to valley anisotropy, fall back to diffuse
+        }
+
+        // Diffuse Lambertian reflection with inward group-velocity check
+        if (trk.type == ExcitationType::Hole) {
+            const Vec3 dir = rng.lambertian_dir(inward_normal);
+            trk.p_eV = dir * trk.p_eV.norm();
+        } else {
+            for (int trial = 0; trial < 16; ++trial) {
+                const Vec3 dir = rng.lambertian_dir(inward_normal);
+                const Vec3 p_trial = lattice_.map_ekin_to_p_electron(trk.valley, dir, trk.ekin);
+                const Vec3 v_trial = lattice_.map_p_to_vel_electron(trk.valley, p_trial);
+                if (v_trial.dot(inward_normal) > 1e-6) {
+                    trk.p_eV = p_trial;
+                    return;
+                }
+            }
+            trk.p_eV = lattice_.map_ekin_to_p_electron(trk.valley, inward_normal, trk.ekin);
+        }
+    }
+
 private:
     const CrystalLattice& lattice_;
 };

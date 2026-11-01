@@ -28,6 +28,9 @@ struct SimStats {
     uint64_t charge_steps         = 0;
     uint64_t luke_phonons_emitted = 0;
     uint64_t intervalley_scatters = 0;
+    uint64_t charges_trapped      = 0;
+    uint64_t trap_ionizations     = 0;
+    uint64_t charge_surface_refls = 0;
     uint64_t charges_collected    = 0;
     double total_luke_phonon_eV   = 0.0;
     double charge_recomb_edep_eV  = 0.0;
@@ -49,6 +52,9 @@ struct SimStats {
         charge_steps         += r.charge_steps;
         luke_phonons_emitted += r.luke_phonons_emitted;
         intervalley_scatters += r.intervalley_scatters;
+        charges_trapped      += r.charges_trapped;
+        trap_ionizations     += r.trap_ionizations;
+        charge_surface_refls += r.charge_surface_refls;
         charges_collected    += r.charges_collected;
         total_luke_phonon_eV += r.total_luke_phonon_eV;
         charge_recomb_edep_eV+= r.charge_recomb_edep_eV;
@@ -120,12 +126,17 @@ public:
                 stats.charge_steps++;
 
                 const Vec3 E_Vm = detector_.e_field.at(trk.pos);
+                const Vec3 v_cur = charge_phys_.velocity(trk);
+                const double v_cur_mag = v_cur.norm();
 
                 const double r_luke = charge_phys_.luke_emission_rate(trk);
                 const double r_iv   = (trk.type == ExcitationType::Electron)
                     ? lattice_.intervalley_rate(trk.ekin, E_Vm)
                     : 0.0;
-                const double r_tot  = r_luke + r_iv;
+                const double r_trap  = physics::charge_trapping_rate(trk.type, v_cur_mag, lattice_.config());
+                const double r_ion_e = physics::trap_ionization_e_rate(trk.type, v_cur_mag, lattice_.config());
+                const double r_ion_h = physics::trap_ionization_h_rate(trk.type, v_cur_mag, lattice_.config());
+                const double r_tot   = r_luke + r_iv + r_trap + r_ion_e + r_ion_h;
 
                 const double dt_max_accel = 100.0 * units::ps;
                 const double dt_phys = (r_tot > 1.0)
@@ -154,6 +165,15 @@ public:
                             ? lattice_.map_p_to_ekin_electron(trk.valley, trk.p_eV)
                             : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
+                        const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
+                        if (!charge_phys_.should_absorb_boundary(trk, bhit.inward_normal,
+                                                                 surf.prob_charge_abs, surf.min_k_elec, surf.min_k_hole, rng)) {
+                            stats.charge_surface_refls++;
+                            trk.pos += bhit.inward_normal * 1e-11;
+                            charge_phys_.reflect_at_boundary(trk, bhit.inward_normal, surf.prob_charge_spec, rng);
+                            continue;
+                        }
+
                         const double recomb_eV = (trk.ekin + 0.5 * e_gap) * trk.weight;
                         stats.charges_collected++;
                         stats.charge_recomb_edep_eV += recomb_eV;
@@ -179,7 +199,23 @@ public:
                     : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
                 if (dt_phys <= dt_max_accel) {
-                    if (r_iv > 0.0 && rng.uniform() * r_tot < r_iv) {
+                    const double u_proc = rng.uniform() * r_tot;
+                    if (u_proc < r_trap) {
+                        stats.charges_trapped++;
+                        stats.escaped_or_killed_eV += (trk.ekin + 0.5 * e_gap) * trk.weight;
+                        break;
+                    } else if (u_proc < r_trap + r_ion_e + r_ion_h) {
+                        stats.trap_ionizations++;
+                        const bool lib_elec = (u_proc < r_trap + r_ion_e);
+                        const double e_knock = 1.0e-6 * units::eV; // G4CMPDriftTrapIonization knock-on energy
+                        const size_t n_val = std::max<size_t>(1, lattice_.num_valleys());
+                        const uint16_t kv = lib_elec ? static_cast<uint16_t>(rng.next_u64() % n_val) : 0;
+                        ChargeTrack knockon = charge_phys_.make_charge(
+                            lib_elec ? ExcitationType::Electron : ExcitationType::Hole,
+                            trk.pos, rng.isotropic_dir(), e_knock, kv, trk.time);
+                        knockon.weight = trk.weight;
+                        charge_stack.push_back(knockon);
+                    } else if (u_proc < r_trap + r_ion_e + r_ion_h + r_iv) {
                         charge_phys_.scatter_intervalley(trk, rng);
                         stats.intervalley_scatters++;
                     } else if (r_luke > 0.0) {

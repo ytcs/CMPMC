@@ -21,10 +21,16 @@ struct BoundaryHit {
 // Replaces: G4CMPSurfaceProperty & G4CMPPhononElectrode
 // ============================================================================
 struct SurfaceProperty {
-    double prob_abs      = 0.0;   // Probability of entering sensor / boundary absorption
-    double prob_refl     = 1.0;   // Probability of reflection if not absorbed
+    double prob_abs      = 0.0;   // Probability of phonon entering sensor / boundary absorption
+    double prob_refl     = 1.0;   // Probability of phonon reflection if not absorbed
     double refl_cutoff   = 350.0; // GHz cutoff for specular/diffuse polynomials
     double anh_cutoff    = 520.0; // GHz cutoff for surface anharmonicity
+
+    // Charge boundary properties (G4CMPDriftBoundaryProcess)
+    double prob_charge_abs  = 1.0; // Probability of charge absorption/recombination at boundary
+    double prob_charge_spec = 0.0; // Specular reflection probability for reflected charges
+    double min_k_elec       = 0.0; // Minimum perpendicular wavevector k_perp [1/m] for e- absorption
+    double min_k_hole       = 0.0; // Minimum perpendicular wavevector k_perp [1/m] for h+ absorption
 
     // Polynomial coefficients vs frequency in GHz (evaluated via Horner's method)
     std::vector<double> spec_coeffs = {1.0};
@@ -87,6 +93,19 @@ struct CylinderSolid {
     constexpr bool contains(const Vec3& p) const noexcept {
         return (p.x * p.x + p.y * p.y <= radius * radius + 1e-12) &&
                (std::abs(p.z) <= half_z + 1e-12);
+    }
+
+    // Reflect exterior points back into the cylinder volume (G4CMPChargeCloud::AdjustToVolume)
+    inline void fold_inside(Vec3& p) const noexcept {
+        if (p.z > half_z)  p.z =  2.0 * half_z - p.z;
+        if (p.z < -half_z) p.z = -2.0 * half_z - p.z;
+        const double r_xy = std::hypot(p.x, p.y);
+        if (r_xy > radius && r_xy > 0.0) {
+            const double r_new = std::max(0.0, 2.0 * radius - r_xy);
+            const double scale = r_new / r_xy;
+            p.x *= scale;
+            p.y *= scale;
+        }
     }
 
     // Compute exact distance to exit cylinder from interior point `p` along unit vector `v`

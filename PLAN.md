@@ -162,13 +162,13 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Port `G4LatticeReader` (`materials::load_g4cmp_config_file()`) in `include/cmpmc/materials/config_reader.hpp`.
 - [x] Port polycrystalline grain-boundary elastic scattering (`G4CMPPhononPolycrystalElasticScattering` -> `physics::polycrystal_scattering_rate`).
 
-### Burst 2: Complete Charge Carrier Physics (Matrix-Element IV Rate, Trapping, Trap Ionization & 3D Charge Cloud) (**IN PROGRESS**)
-- [ ] Port first-principles deformation-potential matrix-element intervalley scattering (`G4CMPInterValleyRate.cc` — acoustic + optical phonon channels).
-- [ ] Port charge carrier bulk trapping (`G4CMPDriftTrappingProcess.cc` — electron & hole trapping MFPs `e_trap_mfp_m`, `h_trap_mfp_m`).
-- [ ] Port trap impact ionization (`G4CMPDriftTrapIonization.cc` — `e_on_e`, `e_on_h`, `h_on_e`, `h_on_h` impurity liberation channels).
-- [ ] Port boundary reflection/recombination (`G4CMPDriftBoundaryProcess.cc`, `G4CMPDriftRecombinationProcess.cc`) and 3D initial charge cloud (`G4CMPChargeCloud.cc`).
+### Burst 2: Complete Charge Carrier Physics (Matrix-Element IV Rate, Trapping, Trap Ionization & 3D Charge Cloud) (**COMPLETED**)
+- [x] Port first-principles deformation-potential matrix-element intervalley scattering (`G4CMPInterValleyRate.cc` — optical phonon deformation potentials + Erginsoy neutral impurity scattering in `include/cmpmc/physics/charge_physics.hpp`).
+- [x] Port charge carrier bulk trapping (`G4CMPDriftTrappingProcess.cc` — electron & hole trapping MFPs `e_trap_mfp_m`, `h_trap_mfp_m`).
+- [x] Port trap impact ionization (`G4CMPDriftTrapIonization.cc` — `e_on_e`, `e_on_h`, `h_on_e`, `h_on_h` impurity liberation channels).
+- [x] Port boundary reflection/recombination (`G4CMPDriftBoundaryProcess.cc`, `G4CMPDriftRecombinationProcess.cc`) and 3D initial charge cloud (`G4CMPChargeCloud.cc`).
 
-### Burst 3: All 5 NIEL Partition Models & Exact Fano Binomial Sampler (**TODO**)
+### Burst 3: All 5 NIEL Partition Models & Exact Fano Binomial Sampler (**IN PROGRESS**)
 - [ ] Port `G4CMPLindhardNIEL.cc`, `G4CMPLewinSmithNIEL.cc`, `G4CMPSarkisNIEL.cc`, `G4CMPImpactTunlNIEL.cc`, and `G4CMPEmpiricalNIEL.cc` into `include/cmpmc/physics/niel_models.hpp`.
 - [ ] Port exact Fano-factor generalized binomial sampling (`G4CMPFanoBinomial.cc`) into `include/cmpmc/partition.hpp`.
 

@@ -249,6 +249,49 @@ static void run_crystal_symmetries_demo() {
               << kin_nb.vg_mag << " m/s, Gamma_poly = "
               << std::scientific << std::setprecision(2) << nb_poly.polycrystal_rate(kin_nb.vg_mag)
               << " s^-1\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 5. Matrix-Element IV Scattering, Charge Trapping & Trap Ionization (Burst 2)
+// ============================================================================
+static void run_charge_trapping_demo() {
+    std::cout << "========================================================================\n";
+    std::cout << " [5] Matrix-Element IV Rate, Charge Trapping & Trap Ionization (Burst 2)\n";
+    std::cout << "========================================================================\n";
+
+    CrystalConfig si_cfg = materials::Silicon();
+    si_cfg.iv_model            = IVRateModel::Matrix;
+    si_cfg.e_trapping_mfp_m    = 5.0 * units::cm;   // 5 cm electron trapping MFP
+    si_cfg.e_trap_ion_d0_mfp_m = 1.5 * units::cm;   // 1.5 cm donor trap impact ionization MFP
+    CrystalLattice si_lat(si_cfg);
+
+    DetectorModel det{};
+    det.e_field = UniformElectricField::from_bias(6.0 * units::Volt, 2.0 * det.solid.half_z);
+    det.luke_sample_fraction = 0.0; // Focus on charge transport only
+    SimulationEngine engine(si_lat, det);
+
+    Rng rng(2026);
+    std::vector<ChargeTrack> charges;
+    std::vector<PhononTrack> phonons;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    EnergyPartition part(si_lat);
+    part.partition_deposit({0.0, 0.0, 0.0}, 0.0, 200.0 * units::eV, /*is_nuclear_recoil=*/false, charges, phonons, rng);
+    engine.transport_charges(charges, phonons, hits, stats, rng);
+
+    const double iv_mat_50meV = physics::intervalley_matrix_rate(50.0 * units::meV, si_cfg);
+    const double r_cloud_nm   = physics::ChargeCloudGenerator::compute_cloud_radius(50, si_cfg) / units::nm;
+
+    std::cout << std::scientific << std::setprecision(3)
+              << "  Si Matrix-Element IV Rate @ 50 meV : " << iv_mat_50meV << " s^-1\n"
+              << std::fixed << std::setprecision(2)
+              << "  3D Charge Cloud Radius (50 pairs)  : " << r_cloud_nm << " nm\n"
+              << "  Intervalley Scatters (Matrix mode) : " << stats.intervalley_scatters << "\n"
+              << "  Trap Impact Ionizations (e->D+)    : " << stats.trap_ionizations << "\n"
+              << "  Bulk Trapped Carriers              : " << stats.charges_trapped << "\n"
+              << "  Collected Electrode Carriers       : " << stats.charges_collected << "\n";
     std::cout << "========================================================================\n";
 }
 
@@ -274,6 +317,7 @@ int main(int argc, char** argv) {
     run_detector_benchmark(ge_lattice, num_primaries, num_threads);
     run_recoil_charge_luke_demo(ge_lattice);
     run_crystal_symmetries_demo();
+    run_charge_trapping_demo();
 
     return 0;
 }

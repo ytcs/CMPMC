@@ -151,31 +151,31 @@ Beyond hardware acceleration, four physics-informed algorithmic shortcuts drasti
 
 ---
 
-## 4. Phased Implementation Plan
+## 4. 5-Burst Porting & Optimization Tracker
 
-### Phase 1: Core Multi-Excitation Prototype (Completed)
-- [x] Zero-dependency `Vec3`, `Mat3`, `ExcitationType`, and `Xoshiro256ss` PRNG (`include/cmpmc/core.hpp`).
-- [x] Exact 3x3 symmetric Christoffel matrix solver, mode polarization classifier ($L, FT, ST$), group velocity LUT, Inverse-CDF anharmonic decay tables, and Herring-Vogt valley matrices (`include/cmpmc/lattice.hpp`).
-- [x] Lumped Kaplan superconducting thin-film cascade (`include/cmpmc/kaplan.hpp`) with analytic trigonometric singularity cancellation.
-- [x] Conduction-band electron & valence-band hole drift, Neganov-Trofimov-Luke Cherenkov phonon emission, and intervalley scattering (`include/cmpmc/charge.hpp`).
-- [x] Lindhard nuclear recoil ionization partition + Fano charge-pair & prompt phonon generator (`include/cmpmc/partition.hpp`).
-- [x] Analytic `CylinderSolid` and `BoxSolid` CSG primitives + frequency-dependent `SurfaceProperty` (`include/cmpmc/geometry.hpp`).
-- [x] Unified multi-excitation transport engine (`include/cmpmc/engine.hpp`) and benchmark suite (`examples/phonon_benchmark.cpp`).
+We organize the complete G4CMP port and optimization roadmap into 5 self-contained bursts, committing and pushing after each burst:
 
-### Phase 2: Generalized Crystal Symmetries & Patterned 2D Surface Masks
-- [ ] Add full $6 \times 6$ Voigt stiffness matrix loader for non-cubic crystals (`Al2O3` sapphire, `CaWO4`, `SiO2` quartz, `GaAs`, `LiF`) from `CrystalMaps/*/config.txt`.
-- [ ] Replace spherical $(\cos\theta, \phi)$ LUT with `256 x 256` `float4` **Octahedral Equal-Area LUT** (`oct_encode`) and pre-baked `KaplanSurrogateLUT`.
-- [ ] Add `SurfaceMask2D` on planar crystal faces (`z = ±H/2`) to support complex patterned QET/TES fins, KID resonators, and qubit ground planes via 2D spatial lookup.
+### Burst 1: All Bravais Symmetries, 12 `CrystalMaps` Presets, `config.txt` Reader & Polycrystal Scattering (**COMPLETED**)
+- [x] Port all 8 Bravais symmetry groups (`Amorphous`, `Cubic`, `Tetragonal`, `Orthorhombic`, `Hexagonal`, `Rhombohedral`, `Monoclinic`, `Triclinic`) and full $6 \times 6$ Voigt stiffness matrix expansion (`CrystalConfig::build_voigt_matrix()` matching `G4CMPCrystalGroup::FillElReduced`).
+- [x] Port Miller `(h, k, l)` orientation rotation (`CrystalConfig::set_miller_orientation()` matching `G4LatticePhysical::SetMillerOrientation`).
+- [x] Add all 12 G4CMP `CrystalMaps/` presets (`Ge`, `Si`, `Al2O3` sapphire, `CaWO4`, `SiO2_alpha` quartz, `SiO2_amorph`, `GaAs`, `CaF2`, `LiF`, `Al`, `Nb`, `Cu`) in `include/cmpmc/materials/presets.hpp`.
+- [x] Port `G4LatticeReader` (`materials::load_g4cmp_config_file()`) in `include/cmpmc/materials/config_reader.hpp`.
+- [x] Port polycrystalline grain-boundary elastic scattering (`G4CMPPhononPolycrystalElasticScattering` -> `physics::polycrystal_scattering_rate`).
 
-### Phase 3: 3D FEM Mesh Electric Fields, Charge Trapping & Chord Luke Stepper
-- [ ] Implement flat tetrahedral mesh walker (`TetMeshField`) replacing `G4CMPBiLinearInterp` / `G4CMPTriLinearInterp` (store `Mat3 inv_edge_matrix` per tetrahedron for 9-multiply barycentric walking).
-- [ ] Port `G4CMPChargeTrapping` and `G4CMPTrapIonization` (shallow/deep impurity trapping and impact ionization).
-- [ ] Add macroscopic chord stepping (CSDA) for high-voltage Neganov-Trofimov-Luke emission.
+### Burst 2: Complete Charge Carrier Physics (Matrix-Element IV Rate, Trapping, Trap Ionization & 3D Charge Cloud) (**IN PROGRESS**)
+- [ ] Port first-principles deformation-potential matrix-element intervalley scattering (`G4CMPInterValleyRate.cc` — acoustic + optical phonon channels).
+- [ ] Port charge carrier bulk trapping (`G4CMPDriftTrappingProcess.cc` — electron & hole trapping MFPs `e_trap_mfp_m`, `h_trap_mfp_m`).
+- [ ] Port trap impact ionization (`G4CMPDriftTrapIonization.cc` — `e_on_e`, `e_on_h`, `h_on_e`, `h_on_h` impurity liberation channels).
+- [ ] Port boundary reflection/recombination (`G4CMPDriftBoundaryProcess.cc`, `G4CMPDriftRecombinationProcess.cc`) and 3D initial charge cloud (`G4CMPChargeCloud.cc`).
 
-### Phase 4: 3D Superconducting Bogoliubov Quasiparticles & New Excitations
-- [ ] Port `G4CMPBogoliubovQP`, `G4CMPSCPairBreakingProcess`, `G4CMPSCRecombinationProcess`, and `G4CMendozaQP` into a dedicated `BogoliubovEngine` using `GenericExcitationTrack`.
-- [ ] Add `Exciton` (singlet/triplet diffusion + VUV photon/phonon emission) and `Magnon` (anisotropic spin-wave dispersion $\omega(\vec{k})$) transport handlers.
+### Burst 3: All 5 NIEL Partition Models & Exact Fano Binomial Sampler (**TODO**)
+- [ ] Port `G4CMPLindhardNIEL.cc`, `G4CMPLewinSmithNIEL.cc`, `G4CMPSarkisNIEL.cc`, `G4CMPImpactTunlNIEL.cc`, and `G4CMPEmpiricalNIEL.cc` into `include/cmpmc/physics/niel_models.hpp`.
+- [ ] Port exact Fano-factor generalized binomial sampling (`G4CMPFanoBinomial.cc`) into `include/cmpmc/partition.hpp`.
 
-### Phase 5: CPU SIMD Wavefronts & GPU / Hardware Ray-Tracing Backend
-- [ ] Implement `PhononWavefrontSoA` and `ChargeWavefrontSoA` queues.
-- [ ] Add CUDA / HIP / Metal wavefront kernels using hardware `tex2DLayered<float4>` for octahedral $\vec{v}_g(\hat{k})$ lookup and optional OptiX / Vulkan Ray Query BVH traversal for complex 3D CAD geometries.
+### Burst 4: Full 3D Superconducting Bogoliubov Quasiparticle Transport (**TODO**)
+- [ ] Port `G4CMPBogoliubovQP.cc`, `G4CMPSCUtils.cc`, `G4CMPQPDiffusion.cc` ($D(E) = D_0 \sqrt{1 - (\Delta/E)^2}$), `G4CMPSCPairBreakingProcess.cc`, `G4CMPQPRadiatesPhononProcess.cc`, `G4CMPQPRecombinationProcess.cc`, `G4CMPQPLocalTrappingProcess.cc`, and `G4CMPQPBoundaryProcess.cc` into `include/cmpmc/physics/superconductor_3d.hpp` and couple with 3D bulk phonons in `SimulationEngine`.
+
+### Burst 5: 2D/3D Tetrahedral FEM Mesh Electric Fields, 2D Patterned Electrode Masks & Tier-2/Tier-4 LUT Optimizations (**TODO**)
+- [ ] Port 2D/3D tetrahedral barycentric FEM electric field interpolator (`G4CMPBiLinearInterp.cc`, `G4CMPTriLinearInterp.cc`, `G4CMPMeshElectricField.cc`) into `include/cmpmc/geometry/mesh_field.hpp`.
+- [ ] Port patterned 2D sensor/electrode surface masks (`G4CMPVElectrodePattern.cc`) into `include/cmpmc/geometry/surface_mask.hpp`.
+- [ ] Implement `256 x 256` `float4` **Octahedral Equal-Area LUT** (`oct_encode`, zero trig) and pre-baked `KaplanSurrogateLUT`.

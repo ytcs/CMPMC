@@ -43,6 +43,13 @@ inline constexpr double anharmonic_decay_rate(PhononMode mode, double energy_eV,
     return A_anh * (nu2 * nu2 * nu);
 }
 
+// Polycrystalline grain-boundary elastic scattering rate (G4CMPPhononPolycrystalElasticScattering):
+//   Gamma_poly = v_group / lambda_polycrystal   [1/s]
+inline constexpr double polycrystal_scattering_rate(double vg_mag, double polycrystal_mfp_m) noexcept {
+    if (polycrystal_mfp_m <= 0.0) return 0.0;
+    return vg_mag / polycrystal_mfp_m;
+}
+
 // --- 2. Density-of-States Polarization Mode Sampling ---
 
 inline PhononMode sample_dos_mode(const CrystalConfig& cfg, Rng& rng) noexcept {

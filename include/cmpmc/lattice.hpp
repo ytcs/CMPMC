@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cmpmc/core.hpp"
+#include "cmpmc/materials/config_reader.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
 #include "cmpmc/physics/phonon_physics.hpp"
@@ -29,7 +30,8 @@ public:
         double vg_mag; // Group velocity magnitude (m/s)
     };
 
-    explicit CrystalLattice(const Config& cfg) : cfg_(cfg) {
+    explicit CrystalLattice(const Config& cfg)
+        : cfg_(cfg), vg_lut_(3 * N_CTHETA * N_PHI) {
         build_stiffness_tensor();
         build_group_velocity_lut();
         build_decay_cdf_tables();
@@ -58,12 +60,12 @@ public:
         const double du = u - i0;
         const double dv = v - j0;
 
-        const auto& grid = vg_lut_[static_cast<int>(mode)];
+        const int m_idx = static_cast<int>(mode);
         const Vec3 vg_cryst =
-            grid[i0][j0]         * ((1.0 - du) * (1.0 - dv)) +
-            grid[i0 + 1][j0]     * (du * (1.0 - dv)) +
-            grid[i0][j0 + 1]     * ((1.0 - du) * dv) +
-            grid[i0 + 1][j0 + 1] * (du * dv);
+             lut_at(m_idx, i0,     j0)     * ((1.0 - du) * (1.0 - dv)) +
+            lut_at(m_idx, i0 + 1, j0)     * (du * (1.0 - dv)) +
+            lut_at(m_idx, i0,     j0 + 1) * ((1.0 - du) * dv) +
+            lut_at(m_idx, i0 + 1, j0 + 1) * (du * dv);
 
         const double mag = vg_cryst.norm();
         const Vec3 vg_det = cfg_.orient * (vg_cryst / std::max(mag, 1e-12));
@@ -77,6 +79,10 @@ public:
 
     inline double downconversion_rate(PhononMode mode, double energy_eV) const noexcept {
         return physics::anharmonic_decay_rate(mode, energy_eV, cfg_.A_anh);
+    }
+
+    inline double polycrystal_rate(double vg_mag) const noexcept {
+        return physics::polycrystal_scattering_rate(vg_mag, cfg_.polycrystal_mfp_m);
     }
 
     inline PhononMode sample_dos_mode(Rng& rng) const noexcept {
@@ -195,9 +201,16 @@ public:
 private:
     Config cfg_;
     double C_[3][3][3][3]{};
-    std::array<std::array<std::array<Vec3, N_PHI>, N_CTHETA>, 3> vg_lut_{};
+    std::vector<Vec3> vg_lut_;
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
+
+    inline const Vec3& lut_at(int m, int i, int j) const noexcept {
+        return vg_lut_[(m * N_CTHETA + i) * N_PHI + j];
+    }
+    inline Vec3& lut_at(int m, int i, int j) noexcept {
+        return vg_lut_[(m * N_CTHETA + i) * N_PHI + j];
+    }
 
     double e_cond_mass_eV_ = 0.12 * units::m_e_eV;
     double h_mass_eV_      = 0.35 * units::m_e_eV;
@@ -218,10 +231,7 @@ private:
     }
 
     void build_stiffness_tensor() noexcept {
-        double V[6][6]{};
-        V[0][0] = V[1][1] = V[2][2] = cfg_.C11;
-        V[0][1] = V[1][0] = V[0][2] = V[2][0] = V[1][2] = V[2][1] = cfg_.C12;
-        V[3][3] = V[4][4] = V[5][5] = cfg_.C44;
+        const auto V = cfg_.build_voigt_matrix();
 
         for (int i = 0; i < 3; ++i)
             for (int j = 0; j < 3; ++j)
@@ -244,7 +254,7 @@ private:
                 double vp[3];
                 physics::solve_christoffel_exact(C_, cfg_.density, k_dir, vg, vp);
                 for (int m = 0; m < 3; ++m) {
-                    vg_lut_[m][i][j] = vg[m];
+                    lut_at(m, i, j) = vg[m];
                 }
             }
         }

@@ -214,6 +214,41 @@ static void run_recoil_charge_luke_demo(const CrystalLattice& ge_lattice) {
               << "  Total Calorimeter Energy : " << measured_total_eV << " eV (Expected "
               << expected_total_eV << " eV)\n"
               << "  End-to-End Runtime       : " << dt_ms << " ms\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 4. Multi-Symmetry Crystal Presets & Polycrystalline Scattering (Burst 1)
+// ============================================================================
+static void run_crystal_symmetries_demo() {
+    std::cout << "========================================================================\n";
+    std::cout << " [4] All-Bravais Crystal Symmetries & Polycrystal Scattering (Burst 1)\n";
+    std::cout << "========================================================================\n";
+
+    CrystalConfig al2o3_cfg = materials::Sapphire();
+    al2o3_cfg.set_miller_orientation(1, 0, 0);
+    CrystalLattice al2o3(al2o3_cfg);
+
+    CrystalConfig cawo4_cfg = materials::CalciumTungstate();
+    CrystalLattice cawo4(cawo4_cfg);
+
+    CrystalConfig nb_cfg = materials::NiobiumCrystal();
+    nb_cfg.polycrystal_mfp_m = 150.0 * units::um; // Polycrystalline Nb grain size
+    CrystalLattice nb_poly(nb_cfg);
+
+    const auto kin_al2o3 = al2o3.map_k_to_vg(PhononMode::L, Vec3{0.0, 0.0, 1.0});
+    const auto kin_cawo4 = cawo4.map_k_to_vg(PhononMode::ST, Vec3{1.0, 1.0, 0.0}.unit());
+    const auto kin_nb    = nb_poly.map_k_to_vg(PhononMode::L, Vec3{1.0, 0.0, 0.0});
+
+    std::cout << std::fixed << std::setprecision(1);
+    std::cout << "  Sapphire (Al2O3, Rhombohedral, [100] orient) : v_g(L, +z)  = "
+              << kin_al2o3.vg_mag << " m/s\n"
+              << "  CaWO4 (Tetragonal C16=-17 GPa)               : v_g(ST,110) = "
+              << kin_cawo4.vg_mag << " m/s\n"
+              << "  Polycrystalline Nb (150 um grain MFP)        : v_g(L, +x)  = "
+              << kin_nb.vg_mag << " m/s, Gamma_poly = "
+              << std::scientific << std::setprecision(2) << nb_poly.polycrystal_rate(kin_nb.vg_mag)
+              << " s^-1\n";
     std::cout << "========================================================================\n";
 }
 
@@ -238,6 +273,7 @@ int main(int argc, char** argv) {
     run_caustics_demo(ge_lattice);
     run_detector_benchmark(ge_lattice, num_primaries, num_threads);
     run_recoil_charge_luke_demo(ge_lattice);
+    run_crystal_symmetries_demo();
 
     return 0;
 }

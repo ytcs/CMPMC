@@ -17,6 +17,7 @@ struct SimStats {
     // Phonon statistics
     uint64_t total_steps          = 0;
     uint64_t isotope_scatters     = 0;
+    uint64_t polycrystal_scatters = 0;
     uint64_t decays_L_to_TT       = 0;
     uint64_t decays_L_to_LT       = 0;
     uint64_t surface_refls        = 0;
@@ -39,6 +40,7 @@ struct SimStats {
     SimStats& operator+=(const SimStats& r) noexcept {
         total_steps          += r.total_steps;
         isotope_scatters     += r.isotope_scatters;
+        polycrystal_scatters += r.polycrystal_scatters;
         decays_L_to_TT       += r.decays_L_to_TT;
         decays_L_to_LT       += r.decays_L_to_LT;
         surface_refls        += r.surface_refls;
@@ -223,8 +225,9 @@ public:
                 stats.total_steps++;
 
                 const double rate_iso  = lattice_.isotope_rate(trk.energy);
+                const double rate_poly = lattice_.polycrystal_rate(trk.vg_mag);
                 const double rate_down = lattice_.downconversion_rate(trk.mode, trk.energy);
-                const double rate_tot  = rate_iso + rate_down;
+                const double rate_tot  = rate_iso + rate_poly + rate_down;
 
                 const double d_phys = (rate_tot > 1e-12)
                     ? (-std::log(rng.uniform()) * (trk.vg_mag / rate_tot))
@@ -236,10 +239,15 @@ public:
                     trk.pos  += trk.vg_dir * d_phys;
                     trk.time += d_phys / trk.vg_mag;
 
-                    if (rate_down > 0.0 && rng.uniform() * rate_tot < rate_down) {
+                    const double u_proc = rng.uniform() * rate_tot;
+                    if (rate_down > 0.0 && u_proc < rate_down) {
                         perform_anharmonic_decay(trk, stack, stats, rng);
                     } else {
-                        stats.isotope_scatters++;
+                        if (u_proc < rate_down + rate_iso) {
+                            stats.isotope_scatters++;
+                        } else {
+                            stats.polycrystal_scatters++;
+                        }
                         trk.mode  = lattice_.sample_dos_mode(rng);
                         trk.k_dir = rng.isotropic_dir();
                         const auto kin = lattice_.map_k_to_vg(trk.mode, trk.k_dir);

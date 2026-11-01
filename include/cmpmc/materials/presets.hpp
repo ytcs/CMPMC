@@ -10,7 +10,12 @@ namespace cmpmc::materials {
 
 // 1. Germanium (Ge) - Cubic [CrystalMaps/Ge/config.txt]
 inline CrystalConfig Germanium() {
-    return CrystalConfig{};
+    CrystalConfig c{};
+    // Primary (Debye-energy) phonon frequency: G4CMP config.txt uses 2 THz, which is
+    // below the Ge acoustic band edge; Leman 1109.1193 Table I gives nu_D = 8.64 THz
+    // (campaign WP8-R Table 1.1); 2408.04732 Table 5 max optical 9.02 THz.
+    c.debye_freq = 8.64 * units::THz;
+    return c;
 }
 
 // 2. Silicon (Si) - Cubic [CrystalMaps/Si/config.txt]
@@ -38,8 +43,10 @@ inline CrystalConfig Silicon() {
     c.v_sound           = 9000.0;
     c.v_trans           = 5400.0;
     c.bandgap           = 1.17 * units::eV;
-    c.pair_energy       = 3.81 * units::eV;
-    c.fano_factor       = 0.15;
+    // eps_eh and F_eh: campaign values (WP5-v4 Sec. 6.4, from 2004.11499 [FT]:
+    // 3.749 +- 0.001 eV and 0.119 +- 0.002 at 5.9 keV, 123 K). G4CMP config: 3.81, 0.15.
+    c.pair_energy       = 3.749 * units::eV;
+    c.fano_factor       = 0.119;
     c.epsilon_rel       = 11.68;
     c.alpha_nonparabolic= 0.5;
     c.h_mass_ratio      = 0.50;
@@ -190,15 +197,18 @@ inline CrystalConfig GalliumArsenide() {
     c.gamma         = -67.51 * units::GPa;
     c.lambda        =  47.20 * units::GPa;
     c.mu            =  44.20 * units::GPa;
+    // Phonon constants as in G4CMP CrystalMaps/GaAs/config.txt and 2408.04732
+    // Tables 3-5 [FT] (A = 7.77e-55 s^4, F_TT = 0.77, DOS 0.584:0.337:0.078); the
+    // previous values (A = 2.66e-55, F_TT = 0.58, ...) matched neither.
     c.B_iso         = 7.22e-42;
-    c.A_anh         = 2.66e-55;
-    c.fTT_frac      = 0.58;
-    c.fLDOS         = 0.0888;
-    c.fSTDOS        = 0.5539;
-    c.fFTDOS        = 0.3572;
-    c.debye_freq    = 7.1 * units::THz;
-    c.v_sound       = 4730.0;
-    c.v_trans       = 3340.0;
+    c.A_anh         = 7.778e-55;
+    c.fTT_frac      = 0.778;
+    c.fLDOS         = 0.078;
+    c.fSTDOS        = 0.584;
+    c.fFTDOS        = 0.337;
+    c.debye_freq    = 8.58 * units::THz;   // max optical, 2408.04732 Table 5 (G4CMP: 6.56 = max acoustic)
+    c.v_sound       = 5130.0;
+    c.v_trans       = 3020.0;
     c.bandgap       = 1.519 * units::eV;
     c.pair_energy   = 4.20 * units::eV;
     c.fano_factor   = 0.12;

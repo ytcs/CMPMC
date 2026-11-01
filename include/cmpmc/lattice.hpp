@@ -5,12 +5,19 @@
 #include <array>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace cmpmc {
 
+enum class IVRateModel : uint8_t {
+    Quadratic = 0, // Edelweiss model: rate * (E0^2 + E^2)^(power/2)
+    Linear    = 1  // Stanford model: rate0 + rate1 * E^power
+};
+
 // ============================================================================
 // CrystalLattice: Anisotropic Elasticity, Christoffel Solver, Group Velocity
-// LUT, and Precomputed Anharmonic Decay Inverse-CDF Tables
+// LUT, Precomputed Anharmonic Decay Inverse-CDF Tables, AND Herring-Vogt
+// Charge Carrier Valleys & Effective Mass Tensors.
 // Replaces: G4LatticeLogical, G4LatticePhysical, G4CMPPhononKinematics,
 //           G4CMPPhononKinTable, and G4CMPPhononDownconversionProcess PDFs
 // ============================================================================
@@ -22,7 +29,10 @@ public:
 
     struct Config {
         std::string name = "Ge";
+        double atomic_Z  = 32.0;                // Atomic number Z (for Lindhard NIEL)
+        double atomic_A  = 72.63;               // Atomic mass A in g/mol (for Lindhard NIEL)
         double density   = 5323.0;              // kg / m^3
+
         // Voigt 6x6 stiffness matrix in Pa (cubic uses C11, C12, C44)
         double C11       = 126.0 * units::GPa;
         double C12       =  44.0 * units::GPa;
@@ -47,6 +57,31 @@ public:
         double v_sound    = 5324.2077;          // m/s (isotropic longitudinal sound speed)
         double v_trans    = 3258.7879;          // m/s (isotropic transverse sound speed)
 
+        // Charge carrier parameters (from CrystalMaps/Ge/config.txt)
+        double bandgap      = 0.74 * units::eV;
+        double pair_energy  = 2.96 * units::eV;
+        double fano_factor  = 0.1057;
+        double h_mass_ratio = 0.350;            // Hole mass / m_e
+        Vec3 e_mass_Start   = {1.588, 0.081, 0.081}; // Diagonal electron mass tensor / m_e
+        std::vector<Vec3> valley_dirs = {
+            { 1,  1,  1},
+            {-1,  1,  1},
+            {-1, -1,  1},
+            { 1, -1,  1}
+        };
+
+        // Acoustic deformation potentials & Intervalley scattering parameters
+        double ac_deform_e   = 11.0 * units::eV;
+        double ac_deform_h   =  3.4 * units::eV;
+        double iv_min_energy = 10.3 * units::meV;
+        IVRateModel iv_model = IVRateModel::Quadratic;
+        double iv_quad_rate  = 6.72e-2;         // Hz
+        double iv_quad_field = 217.0;           // V/m
+        double iv_quad_power = 3.24;
+        double iv_lin_rate0  = 1.5e6;           // Hz
+        double iv_lin_rate1  = 1.5;             // Hz / (V/cm)^power
+        double iv_lin_power  = 4.0;
+
         // Crystal frame to Detector frame rotation (Miller orientation)
         Mat3 orient       = Mat3::identity();
     };
@@ -60,34 +95,50 @@ public:
         build_stiffness_tensor();
         build_group_velocity_lut();
         build_decay_cdf_tables();
+        build_charge_tensors();
     }
 
     // Standard G4CMP CrystalMaps/Ge/config.txt preset
-    static Config germanium_config() noexcept {
+    static Config germanium_config() {
         return Config{};
     }
 
     // Standard G4CMP CrystalMaps/Si/config.txt preset
-    static Config silicon_config() noexcept {
+    static Config silicon_config() {
         Config c;
-        c.name       = "Si";
-        c.density    = 2329.0; // kg/m^3
-        c.C11        = 165.6 * units::GPa;
-        c.C12        =  63.9 * units::GPa;
-        c.C44        =  79.5 * units::GPa;
-        c.beta       = -42.9 * units::GPa;
-        c.gamma      = -94.5 * units::GPa;
-        c.lambda     =  52.4 * units::GPa;
-        c.mu         =  68.0 * units::GPa;
-        c.B_iso      = 2.43e-42;
-        c.A_anh      = 7.41e-56;
-        c.fTT_frac   = 0.74;
-        c.fLDOS      = 0.093;
-        c.fSTDOS     = 0.531;
-        c.fFTDOS     = 0.376;
-        c.debye_freq = 15.0 * units::THz;
-        c.v_sound    = 9000.0;
-        c.v_trans    = 5400.0;
+        c.name          = "Si";
+        c.atomic_Z      = 14.0;
+        c.atomic_A      = 28.085;
+        c.density       = 2329.0; // kg/m^3
+        c.C11           = 165.6 * units::GPa;
+        c.C12           =  63.9 * units::GPa;
+        c.C44           =  79.5 * units::GPa;
+        c.beta          = -42.9 * units::GPa;
+        c.gamma         = -94.5 * units::GPa;
+        c.lambda        =  52.4 * units::GPa;
+        c.mu            =  68.0 * units::GPa;
+        c.B_iso         = 2.43e-42;
+        c.A_anh         = 7.41e-56;
+        c.fTT_frac      = 0.74;
+        c.fLDOS         = 0.093;
+        c.fSTDOS        = 0.531;
+        c.fFTDOS        = 0.376;
+        c.debye_freq    = 15.0 * units::THz;
+        c.v_sound       = 9000.0;
+        c.v_trans       = 5400.0;
+        c.bandgap       = 1.17 * units::eV;
+        c.pair_energy   = 3.81 * units::eV;
+        c.fano_factor   = 0.15;
+        c.h_mass_ratio  = 0.50;
+        c.e_mass_Start  = {0.91, 0.19, 0.19};
+        c.valley_dirs   = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+        c.ac_deform_e   = 9.0 * units::eV;
+        c.ac_deform_h   = 5.0 * units::eV;
+        c.iv_min_energy = 12.0 * units::meV;
+        c.iv_model      = IVRateModel::Linear;
+        c.iv_lin_rate0  = 1.5e6;
+        c.iv_lin_rate1  = 1.5;
+        c.iv_lin_power  = 4.0;
         return c;
     }
 
@@ -96,10 +147,8 @@ public:
 
     // ========================================================================
     // Fast Bilinear LUT Query: wavevector k_dir -> (vg_dir, vg_mag)
-    // Replaces runtime Christoffel matrix solve on every step (~5 ns vs ~280 ns)
     // ========================================================================
     inline Kinematics map_k_to_vg(PhononMode mode, const Vec3& k_det) const noexcept {
-        // Rotate wavevector from detector frame into crystal lattice frame
         const Vec3 k = cfg_.orient.mul_transpose(k_det).unit();
 
         const double ctheta = std::clamp(k.z, -1.0, 1.0);
@@ -122,14 +171,12 @@ public:
             grid[i0 + 1][j0 + 1] * (du * dv);
 
         const double mag = vg_cryst.norm();
-        // Rotate group velocity back into detector frame
         const Vec3 vg_det = cfg_.orient * (vg_cryst / std::max(mag, 1e-12));
         return {vg_det.unit(), mag};
     }
 
     // Exact Christoffel matrix solver (used to populate LUT or for reference checks)
     void solve_christoffel_exact(const Vec3& k_unit, Vec3 vg_out[3], double vphase_out[3]) const noexcept {
-        // 1. Build symmetric 3x3 Christoffel matrix D_il = (1/rho) * C_ijlm * k_j * k_m
         double D[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
         const double inv_rho = 1.0 / cfg_.density;
         for (int i = 0; i < 3; ++i) {
@@ -144,11 +191,10 @@ public:
             }
         }
 
-        // 2. Solve 3x3 real symmetric eigensystem via exact cyclic Jacobi rotations
         double V[3][3] = {{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
         for (int sweep = 0; sweep < 12; ++sweep) {
             const double off = std::abs(D[0][1]) + std::abs(D[0][2]) + std::abs(D[1][2]);
-            if (off < 1e-15 * ( std::abs(D[0][0]) + std::abs(D[1][1]) + std::abs(D[2][2]) )) break;
+            if (off < 1e-15 * (std::abs(D[0][0]) + std::abs(D[1][1]) + std::abs(D[2][2]))) break;
 
             for (int p = 0; p < 2; ++p) {
                 for (int q = p + 1; q < 3; ++q) {
@@ -190,8 +236,6 @@ public:
             {V[0][2], V[1][2], V[2][2]}
         };
 
-        // 3. Classify modes matching G4CMPPhononKinematics:
-        // Longitudinal (L) = eigenvector most parallel to k_unit (largest |e . k|)
         int long_idx = 0;
         double max_dot = -1.0;
         for (int i = 0; i < 3; ++i) {
@@ -208,7 +252,6 @@ public:
 
         const int mode_indices[3] = {long_idx, ft_idx, st_idx};
 
-        // 4. Compute group velocity vg[dim] = (1 / (rho * v_phase)) * e_i * C_ijld * k_j * e_l
         for (int m = 0; m < 3; ++m) {
             const int idx = mode_indices[m];
             const double vp = std::sqrt(std::max(evals[idx], 1.0));
@@ -233,16 +276,14 @@ public:
     }
 
     // ========================================================================
-    // Bulk Scattering Rates & Mode Sampling (Tamura PRB 31, 1985)
+    // Bulk Phonon Scattering Rates & Mode Sampling (Tamura PRB 31, 1985)
     // ========================================================================
-    // Isotope scattering rate (1/s): Gamma_iso = B_iso * nu^4
     inline double isotope_rate(double energy_eV) const noexcept {
         const double nu = energy_eV / units::h_Planck;
         const double nu2 = nu * nu;
         return cfg_.B_iso * (nu2 * nu2);
     }
 
-    // Anharmonic downconversion rate (1/s): Gamma_anh = A_anh * nu^5 (only for L-mode)
     inline double downconversion_rate(PhononMode mode, double energy_eV) const noexcept {
         if (mode != PhononMode::L) return 0.0;
         const double nu = energy_eV / units::h_Planck;
@@ -250,7 +291,6 @@ public:
         return cfg_.A_anh * (nu2 * nu2 * nu);
     }
 
-    // Sample new polarization mode after elastic isotope scattering according to DOS
     inline PhononMode sample_dos_mode(Rng& rng) const noexcept {
         const double u = rng.uniform();
         if (u < cfg_.fLDOS) return PhononMode::L;
@@ -258,7 +298,6 @@ public:
         return PhononMode::FT;
     }
 
-    // Sample transverse polarization mode (ST vs FT) for anharmonic decay products
     inline PhononMode sample_transverse_mode(Rng& rng) const noexcept {
         const double p_st = cfg_.fSTDOS / (cfg_.fSTDOS + cfg_.fFTDOS);
         return (rng.uniform() < p_st) ? PhononMode::ST : PhononMode::FT;
@@ -266,9 +305,7 @@ public:
 
     // ========================================================================
     // O(1) Inverse-CDF Sampling for Anharmonic Downconversion
-    // Replaces 30-iteration rejection loops in G4CMPPhononDownconversionProcess
     // ========================================================================
-    // Sample x = E_L' / E_L for L -> L' + T decay (FV4 distribution)
     inline double sample_lt_energy_fraction(Rng& rng) const noexcept {
         const double u = rng.uniform() * (N_CDF - 1);
         const int i = std::min(static_cast<int>(u), N_CDF - 2);
@@ -276,7 +313,6 @@ public:
         return cdf_lt_[i] * (1.0 - frac) + cdf_lt_[i + 1] * frac;
     }
 
-    // Sample x = E_T1 / E_L for L -> T + T decay (FTV5 distribution)
     inline double sample_tt_energy_fraction(Rng& rng) const noexcept {
         const double u = rng.uniform() * (N_CDF - 1);
         const int i = std::min(static_cast<int>(u), N_CDF - 2);
@@ -284,7 +320,6 @@ public:
         return cdf_tt_[i] * (1.0 - frac) + cdf_tt_[i + 1] * frac;
     }
 
-    // Opening angles for decay secondaries (exact energy-momentum conservation)
     inline double theta_L_to_LT(double x) const noexcept {
         const double m = cfg_.v_sound / cfg_.v_trans;
         const double cos_th = (1.0 + (x * x) * (1.0 - m * m) + 2.0 * x * m * m - m * m) / (2.0 * x);
@@ -303,13 +338,128 @@ public:
         return std::acos(std::clamp(cos_th, -1.0, 1.0));
     }
 
+    // ========================================================================
+    // Charge Carrier Herring-Vogt Kinematics (Matches G4LatticeLogical)
+    // ========================================================================
+    size_t num_valleys() const noexcept { return valley_rot_.size(); }
+    double electron_mass_eV() const noexcept { return e_cond_mass_eV_; } // m_cond * c^2 in eV
+    double hole_mass_eV() const noexcept { return h_mass_eV_; }          // m_h * c^2 in eV
+    double l0_electron() const noexcept { return l0_e_; }                // m
+    double l0_hole() const noexcept { return l0_h_; }                    // m
+    double k_sound_electron() const noexcept { return k_sound_e_; }      // 1/m
+    double k_sound_hole() const noexcept { return k_sound_h_; }          // 1/m
+
+    // Rotate vector from crystal frame into valley frame `iv`
+    inline Vec3 rotate_to_valley(size_t iv, const Vec3& v) const noexcept {
+        return valley_rot_[iv] * v;
+    }
+
+    // Rotate vector from valley frame `iv` back into crystal frame
+    inline Vec3 rotate_from_valley(size_t iv, const Vec3& v) const noexcept {
+        return valley_rot_[iv].mul_transpose(v);
+    }
+
+    // Herring-Vogt Ellipsoidal-to-Spherical transform: sqrt(m_cond / M) * D_iv * v
+    inline Vec3 ellipsoidal_to_spherical(size_t iv, const Vec3& v) const noexcept {
+        const Vec3 v_val = rotate_to_valley(iv, v);
+        return {
+            v_val.x * hv_sqrt_inv_.x,
+            v_val.y * hv_sqrt_inv_.y,
+            v_val.z * hv_sqrt_inv_.z
+        };
+    }
+
+    // Inverse Herring-Vogt Spherical-to-Ellipsoidal transform: D_iv^T * sqrt(M / m_cond) * v
+    inline Vec3 spherical_to_ellipsoidal(size_t iv, const Vec3& v) const noexcept {
+        const Vec3 scaled{
+            v.x * hv_sqrt_.x,
+            v.y * hv_sqrt_.y,
+            v.z * hv_sqrt_.z
+        };
+        return rotate_from_valley(iv, scaled);
+    }
+
+    // Map electron crystal momentum p = hbar*c*k (eV) to kinetic energy E_kin (eV)
+    // In valley frame: E_kin = sum_i p_v,i^2 / (2 * m_ii * c^2) = |p_HV|^2 / (2 * m_cond * c^2)
+    inline double map_p_to_ekin_electron(size_t iv, const Vec3& p_eV) const noexcept {
+        const Vec3 p_hv = ellipsoidal_to_spherical(iv, p_eV);
+        return std::sqrt(p_hv.norm2() + e_cond_mass_eV_ * e_cond_mass_eV_) - e_cond_mass_eV_;
+    }
+
+    // Map hole momentum p (in eV, i.e., p*c) to kinetic energy E_kin (eV)
+    inline double map_p_to_ekin_hole(const Vec3& p_eV) const noexcept {
+        return std::sqrt(p_eV.norm2() + h_mass_eV_ * h_mass_eV_) - h_mass_eV_;
+    }
+
+    // Map electron crystal momentum p = hbar*c*k (eV) to group velocity vector v = dE/dp (m/s)
+    // Ensures exact work-energy conservation: dE_kin/dt = v . (q * E)
+    inline Vec3 map_p_to_vel_electron(size_t iv, const Vec3& p_eV) const noexcept {
+        const double ekin = map_p_to_ekin_electron(iv, p_eV);
+        const Vec3 pv = rotate_to_valley(iv, p_eV);
+        const Vec3 v_valley{
+            pv.x / mass_ratio_.x,
+            pv.y / mass_ratio_.y,
+            pv.z / mass_ratio_.z
+        };
+        return rotate_from_valley(iv, v_valley) * (units::c_light / (ekin + e_cond_mass_eV_));
+    }
+
+    // Map hole momentum p (eV) to velocity vector v (m/s)
+    inline Vec3 map_p_to_vel_hole(const Vec3& p_eV) const noexcept {
+        const double ekin = map_p_to_ekin_hole(p_eV);
+        return p_eV * (units::c_light / (ekin + h_mass_eV_));
+    }
+
+    // Map electron crystal momentum p (eV) to wavevector k (1/m) in crystal frame
+    inline Vec3 map_p_to_k_electron(size_t /*iv*/, const Vec3& p_eV) const noexcept {
+        return p_eV / units::hbarc;
+    }
+
+    // Map electron wavevector k (1/m) in crystal frame to crystal momentum p (eV)
+    inline Vec3 map_k_to_p_electron(size_t /*iv*/, const Vec3& k) const noexcept {
+        return k * units::hbarc;
+    }
+
+    // Rescale electron crystal momentum along `p_dir` to match target kinetic energy `ekin` (eV)
+    inline Vec3 map_ekin_to_p_electron(size_t iv, const Vec3& p_dir, double ekin) const noexcept {
+        const Vec3 u = p_dir.unit();
+        const Vec3 u_hv = ellipsoidal_to_spherical(iv, u);
+        const double band_u = u_hv.norm2();
+        if (band_u <= 0.0 || ekin <= 0.0) return {0.0, 0.0, 0.0};
+        const double p_mag = std::sqrt((ekin * ekin + 2.0 * ekin * e_cond_mass_eV_) / band_u);
+        return u * p_mag;
+    }
+
+    // Intervalley scattering rate (Hz) as a function of electric field E (V/m) and E_kin (eV)
+    inline double intervalley_rate(double ekin_eV, const Vec3& E_field_Vm) const noexcept {
+        if (valley_rot_.size() < 2 || ekin_eV < cfg_.iv_min_energy) return 0.0;
+        if (cfg_.iv_model == IVRateModel::Quadratic) {
+            const double e0 = cfg_.iv_quad_field;
+            return cfg_.iv_quad_rate * std::pow(e0 * e0 + E_field_Vm.norm2(), 0.5 * cfg_.iv_quad_power);
+        } else {
+            const double E_Vcm = E_field_Vm.norm() * 0.01;
+            return cfg_.iv_lin_rate0 + cfg_.iv_lin_rate1 * std::pow(E_Vcm, cfg_.iv_lin_power);
+        }
+    }
+
 private:
     Config cfg_;
     double C_[3][3][3][3]{};
-    // vg_lut_[mode][ctheta_idx][phi_idx] stores velocity vector in crystal frame
     std::array<std::array<std::array<Vec3, N_PHI>, N_CTHETA>, 3> vg_lut_{};
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
+
+    // Charge carrier derived quantities
+    double e_cond_mass_eV_ = 0.12 * units::m_e_eV;
+    double h_mass_eV_      = 0.35 * units::m_e_eV;
+    Vec3 mass_ratio_{1.0, 1.0, 1.0}; // m_ii / m_cond
+    Vec3 hv_sqrt_{1.0, 1.0, 1.0};    // sqrt(m_ii / m_cond)
+    Vec3 hv_sqrt_inv_{1.0, 1.0, 1.0};// sqrt(m_cond / m_ii)
+    std::vector<Mat3> valley_rot_;
+    double l0_e_           = 1e-7;
+    double l0_h_           = 1e-7;
+    double k_sound_e_      = 1e7;
+    double k_sound_h_      = 1e7;
 
     static constexpr int voigt_index(int i, int j) noexcept {
         if (i == j) return i;
@@ -339,7 +489,6 @@ private:
                 const double phi = units::two_pi * (static_cast<double>(j) / (N_PHI - 1));
                 Vec3 k_dir{stheta * std::cos(phi), stheta * std::sin(phi), ctheta};
                 if (stheta < 1e-7) {
-                    // Slightly perturb away from exact pole to avoid degenerate transverse eigenvectors
                     k_dir = Vec3{1e-6, 0.0, ctheta}.unit();
                 }
                 Vec3 vg[3];
@@ -352,7 +501,54 @@ private:
         }
     }
 
-    // Exact Tamura FV4 PDF (G4CMPPhononDownconversionProcess::FV4)
+    void build_charge_tensors() noexcept {
+        const double m_xx = cfg_.e_mass_Start.x;
+        const double m_yy = cfg_.e_mass_Start.y;
+        const double m_zz = cfg_.e_mass_Start.z;
+        const double m_cond_ratio = 3.0 / (1.0 / m_xx + 1.0 / m_yy + 1.0 / m_zz);
+
+        e_cond_mass_eV_ = m_cond_ratio * units::m_e_eV;
+        h_mass_eV_      = cfg_.h_mass_ratio * units::m_e_eV;
+
+        mass_ratio_ = {m_xx / m_cond_ratio, m_yy / m_cond_ratio, m_zz / m_cond_ratio};
+        hv_sqrt_    = {std::sqrt(mass_ratio_.x), std::sqrt(mass_ratio_.y), std::sqrt(mass_ratio_.z)};
+        hv_sqrt_inv_= {1.0 / hv_sqrt_.x, 1.0 / hv_sqrt_.y, 1.0 / hv_sqrt_.z};
+
+        // Construct valley rotation matrices matching G4LatticeLogical::AddValley(valleyDirVec)
+        valley_rot_.clear();
+        for (const Vec3& raw_dir : cfg_.valley_dirs) {
+            const Vec3 vdir = raw_dir.unit();
+            const double vx = vdir.x;
+            const double vy = vdir.y;
+            const double vz = vdir.z;
+            const double f  = std::sqrt(std::max(0.0, 1.0 - vz * vz));
+            const double a  = (std::abs(vy) < 1e-12) ? 0.0 : ((std::abs(vx) < 1e-12) ? -1.0 : -vy / f);
+            const double b  = (std::abs(vy) < 1e-12) ? 1.0 : ((std::abs(vx) < 1e-12) ?  0.0 :  vx / f);
+            const double d  = -vz * b;
+            const double e  =  vz * a;
+            valley_rot_.push_back(Mat3::from_rows(vdir, {a, b, 0.0}, {d, e, f}));
+        }
+
+        // Compute acoustic deformation scattering lengths l0_e and l0_h (in meters):
+        // l0 = pi * hbar^4 * rho / (2 * m^3 * E_def^2)
+        auto compute_l0 = [&](double mass_ratio_me, double ac_deform_eV) noexcept -> double {
+            if (ac_deform_eV <= 0.0) return 1e-6;
+            const double hbar_SI = units::hbar_Planck * units::e_SI; // J*s
+            const double m_SI    = mass_ratio_me * units::m_e_kg;    // kg
+            const double ac_SI   = ac_deform_eV * units::e_SI;       // J
+            const double hbar4   = (hbar_SI * hbar_SI) * (hbar_SI * hbar_SI);
+            const double m3      = m_SI * m_SI * m_SI;
+            return 0.5 * units::pi * hbar4 * cfg_.density / (m3 * ac_SI * ac_SI);
+        };
+
+        l0_e_ = compute_l0(m_cond_ratio, cfg_.ac_deform_e);
+        l0_h_ = compute_l0(cfg_.h_mass_ratio, cfg_.ac_deform_h);
+
+        // Cherenkov sound wavevectors k_sound = m * v_sound / hbar (in 1/m)
+        k_sound_e_ = (e_cond_mass_eV_ * cfg_.v_sound) / (units::c_light * units::hbarc);
+        k_sound_h_ = (h_mass_eV_      * cfg_.v_sound) / (units::c_light * units::hbarc);
+    }
+
     double pdf_fv4(double x) const noexcept {
         const double m = cfg_.v_sound / cfg_.v_trans;
         const double xmin = (m - 1.0) / (m + 1.0);
@@ -374,7 +570,6 @@ private:
         return u * u * (x / (1.0 - x));
     }
 
-    // Exact Tamura FTV5 PDF (G4CMPPhononDownconversionProcess::FTV5)
     double pdf_ftv5(double x) const noexcept {
         const double m = cfg_.v_sound / cfg_.v_trans;
         const double xmin = (1.0 - 1.0 / m) * 0.5;

@@ -39,21 +39,57 @@ namespace units {
     inline constexpr double GHz         = 1e9;
     inline constexpr double THz         = 1e12;
 
-    // Energy (eV)
+    // Energy (eV) & Voltage (V)
     inline constexpr double eV          = 1.0;
+    inline constexpr double keV         = 1e3;
     inline constexpr double meV         = 1e-3;
     inline constexpr double ueV         = 1e-6;
+    inline constexpr double Volt        = 1.0;
 
     // Pressure / Stiffness (Pa)
     inline constexpr double Pa          = 1.0;
     inline constexpr double GPa         = 1e9;
 
-    // Fundamental constants in internal units
+    // Fundamental constants
+    inline constexpr double c_light     = 299792458.0;     // m / s
+    inline constexpr double c_squared   = c_light * c_light;
     inline constexpr double h_Planck    = 4.135667696e-15; // eV * s
     inline constexpr double hbar_Planck = 6.582119569e-16; // eV * s
+    inline constexpr double hbarc       = hbar_Planck * c_light; // eV * m
     inline constexpr double k_Boltzmann = 8.617333262e-5;  // eV / K
-    inline constexpr double e_SI        = 1.602176634e-19; // J / eV
+    inline constexpr double e_SI        = 1.602176634e-19; // J / eV (or C)
+    inline constexpr double m_e_eV      = 510998.950;      // Electron rest mass E = m_e c^2 (eV)
+    inline constexpr double m_e_kg      = 9.1093837015e-31;// Electron mass (kg)
 } // namespace units
+
+// ============================================================================
+// Generalized Condensed-Matter Excitation Types
+// Designed for Phonons, Charge Carriers, Superconducting QPs, and future
+// collective excitations (Excitons, Magnons, Plasmons, Triplets).
+// ============================================================================
+enum class ExcitationType : uint8_t {
+    Phonon         = 0, // Acoustic / optical lattice vibrations (L, FT, ST)
+    Electron       = 1, // Conduction-band drift electron (with Herring-Vogt valley)
+    Hole           = 2, // Valence-band drift hole
+    BogoliubovQP   = 3, // Superconducting Bogoliubov quasiparticle
+    Exciton        = 4, // Bound electron-hole pair (singlet/triplet, e.g. scintillators/LHe)
+    Magnon         = 5, // Spin-wave excitation (magnetic calorimeters / YIG)
+    Plasmon        = 6, // Collective charge oscillation
+    Custom         = 7  // User-defined excitation species
+};
+
+inline constexpr const char* excitation_name(ExcitationType t) noexcept {
+    switch (t) {
+        case ExcitationType::Phonon:       return "Phonon";
+        case ExcitationType::Electron:     return "Electron";
+        case ExcitationType::Hole:         return "Hole";
+        case ExcitationType::BogoliubovQP: return "BogoliubovQP";
+        case ExcitationType::Exciton:      return "Exciton";
+        case ExcitationType::Magnon:       return "Magnon";
+        case ExcitationType::Plasmon:      return "Plasmon";
+        default:                           return "Custom";
+    }
+}
 
 // Phonon Polarization Modes (matches G4PhononPolarization)
 enum class PhononMode : uint8_t {
@@ -143,6 +179,14 @@ struct Mat3 {
         return Mat3{{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}};
     }
 
+    static constexpr Mat3 diagonal(double xx, double yy, double zz) noexcept {
+        return Mat3{{{xx, 0, 0}, {0, yy, 0}, {0, 0, zz}}};
+    }
+
+    static constexpr Mat3 from_rows(const Vec3& r0, const Vec3& r1, const Vec3& r2) noexcept {
+        return Mat3{{{r0.x, r0.y, r0.z}, {r1.x, r1.y, r1.z}, {r2.x, r2.y, r2.z}}};
+    }
+
     constexpr Vec3 operator*(const Vec3& v) const noexcept {
         return {
             m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
@@ -204,6 +248,13 @@ struct Rng {
     // Uniform double in [a, b)
     constexpr double uniform(double a, double b) noexcept {
         return a + (b - a) * uniform();
+    }
+
+    // Standard normal distribution N(0, 1) via Box-Muller
+    inline double normal() noexcept {
+        const double u1 = uniform();
+        const double u2 = uniform();
+        return std::sqrt(-2.0 * std::log(u1)) * std::cos(units::two_pi * u2);
     }
 
     // Isotropic 3D unit vector (replaces G4RandomDirection)

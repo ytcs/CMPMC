@@ -24,7 +24,6 @@ static void run_caustics_demo(const CrystalLattice& ge_lattice) {
 
     const auto t0 = std::chrono::steady_clock::now();
     for (uint64_t i = 0; i < N_RAYS; ++i) {
-        // Sample wavevector in upper hemisphere
         Vec3 k = rng.isotropic_dir();
         if (k.z < 0.0) k.z = -k.z;
 
@@ -32,7 +31,6 @@ static void run_caustics_demo(const CrystalLattice& ge_lattice) {
         const auto kin = ge_lattice.map_k_to_vg(mode, k);
         if (kin.vg_dir.z <= 0.2) continue;
 
-        // Project onto z = 1 plane, x/z and y/z in [-1.0, 1.0]
         const double px = kin.vg_dir.x / kin.vg_dir.z;
         const double py = kin.vg_dir.y / kin.vg_dir.z;
         if (std::abs(px) < 1.0 && std::abs(py) < 1.0) {
@@ -76,8 +74,6 @@ static void run_detector_benchmark(const CrystalLattice& ge_lattice, uint32_t nu
     DetectorModel detector{};
     SimulationEngine engine(ge_lattice, detector);
 
-    // Primary Debye-energy (2 THz = 8.27 meV) Longitudinal phonons at center (0, 0, 0)
-    // Each 2 THz L-phonon undergoes rapid anharmonic downconversion into a cascade of ST/FT phonons.
     const double primary_energy = ge_lattice.debye_energy();
 
     std::cout << "  Crystal          : Germanium [100] (R = 3.81 cm, H = 2.54 cm)\n"
@@ -151,39 +147,73 @@ static void run_detector_benchmark(const CrystalLattice& ge_lattice, uint32_t nu
               << "  Sub-gap / Escaped Energy : " << (total.escaped_or_killed_eV / units::eV) << " eV ("
               << (100.0 * total.escaped_or_killed_eV / total.total_injected_eV) << "%)\n"
               << "  Energy Conservation Diff : " << std::scientific << energy_balance_err << std::fixed << "\n\n";
+}
 
-    // Build arrival time histogram (0 to 80 us in 20 bins of 4 us)
-    constexpr int N_BINS = 20;
-    constexpr double MAX_TIME_US = 80.0;
-    std::array<double, N_BINS> time_hist{};
-    uint64_t mode_counts[3] = {0, 0, 0};
+// ============================================================================
+// 3. End-to-End Nuclear Recoil Partition + Charge Drift + NTL Phonon Cascade
+//    (Replicates G4CMPEnergyPartition + G4CMPVDriftProcess + G4CMPLukeScattering)
+// ============================================================================
+static void run_recoil_charge_luke_demo(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [3] End-to-End Nuclear Recoil + Herring-Vogt Charge Drift + Luke Gain\n";
+    std::cout << "========================================================================\n";
 
-    for (const auto& h : all_hits) {
-        mode_counts[static_cast<int>(h.mode)]++;
-        const double t_us = h.time / units::us;
-        const int bin = static_cast<int>((t_us / MAX_TIME_US) * N_BINS);
-        if (bin >= 0 && bin < N_BINS) {
-            time_hist[bin] += h.edep;
-        }
-    }
+    constexpr double BIAS_VOLTS = 4.0 * units::Volt;
+    constexpr double RECOIL_EV  = 100.0 * units::eV;
 
-    double max_bin_e = 1e-30;
-    for (double e : time_hist) max_bin_e = std::max(max_bin_e, e);
+    DetectorModel detector{};
+    detector.e_field = UniformElectricField::from_bias(BIAS_VOLTS, 2.0 * detector.solid.half_z);
+    detector.luke_sample_fraction = 0.05; // Track 5% of Luke phonons with weight = 20x
 
-    std::cout << "  --- Sensor Hit Polarization Breakdown ---\n"
-              << "  L  : " << (100.0 * mode_counts[0] / std::max<size_t>(1, all_hits.size())) << "%  (Target LDOS  ~ 9.8%)\n"
-              << "  FT : " << (100.0 * mode_counts[1] / std::max<size_t>(1, all_hits.size())) << "%  (Target FTDOS ~ 36.7%)\n"
-              << "  ST : " << (100.0 * mode_counts[2] / std::max<size_t>(1, all_hits.size())) << "%  (Target STDOS ~ 53.5%)\n\n";
+    SimulationEngine engine(ge_lattice, detector);
+    EnergyPartition partitioner(ge_lattice);
 
-    std::cout << "  --- QET Sensor Arrival Time Pulse Profile (0 - 80 us) ---\n";
-    for (int b = 0; b < N_BINS; ++b) {
-        const double t_start = b * (MAX_TIME_US / N_BINS);
-        const double t_end   = (b + 1) * (MAX_TIME_US / N_BINS);
-        const int bar_len = static_cast<int>(40.0 * (time_hist[b] / max_bin_e));
-        std::cout << "  " << std::setw(4) << static_cast<int>(t_start) << "-"
-                  << std::setw(2) << static_cast<int>(t_end) << " us | "
-                  << std::string(bar_len, '#') << "\n";
-    }
+    Rng rng(1337);
+    std::vector<ChargeTrack> charges;
+    std::vector<PhononTrack> phonons;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    const auto t0 = std::chrono::steady_clock::now();
+
+    // 1. Partition a 100 eV Nuclear Recoil at the center of the Ge crystal
+    PartitionOptions part_opts{};
+    part_opts.max_sampled_phonons = 1000; // Downsample prompt phonon cloud to 1000 tracks (with exact weight)
+    const auto part = partitioner.partition_deposit(
+        {0.0, 0.0, 0.0}, 0.0, RECOIL_EV, /*is_nuclear_recoil=*/true, charges, phonons, rng, part_opts);
+
+    // 2. Drift e-/h+ pairs in the 4V bias field (Herring-Vogt valleys + IV scatter + Luke emission)
+    engine.transport_charges(charges, phonons, hits, stats, rng);
+
+    // 3. Transport all prompt + Luke-emitted phonons through the crystal to the Al QET sensors
+    engine.transport(phonons, hits, stats, rng);
+
+    const auto t1 = std::chrono::steady_clock::now();
+    const double dt_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    // Expected total calorimeter energy = E_recoil + N_pairs * e * V_bias
+    const double expected_luke_work_eV = static_cast<double>(part.n_pairs_true) * BIAS_VOLTS;
+    const double expected_total_eV     = RECOIL_EV + expected_luke_work_eV;
+    const double measured_total_eV     = stats.total_deposited_eV + stats.escaped_or_killed_eV;
+
+    std::cout << std::fixed << std::setprecision(3);
+    std::cout << "  Recoil Event             : " << RECOIL_EV << " eV Nuclear Recoil in Ge @ "
+              << BIAS_VOLTS << " V Bias\n"
+              << "  Lindhard Ionization Yield: " << (100.0 * part.lindhard_yield) << "% ("
+              << part.ionizing_eV << " eV ionizing, " << part.niel_eV << " eV NIEL)\n"
+              << "  Generated e-/h+ Pairs    : " << part.n_pairs_true << " pairs ("
+              << (part.n_pairs_true * 2) << " carriers across 4 L-valleys)\n"
+              << "  Prompt Recoil Phonons    : " << part.n_phonons_true << " phonons ("
+              << part.prompt_phonon_eV << " eV)\n"
+              << "  Charge Drift Steps       : " << stats.charge_steps << " ("
+              << stats.intervalley_scatters << " intervalley scatters)\n"
+              << "  Luke Phonons Emitted     : " << stats.luke_phonons_emitted
+              << " (Total Luke energy = " << stats.total_luke_phonon_eV << " eV)\n"
+              << "  Expected NTL Work (N*eV) : " << expected_luke_work_eV << " eV\n"
+              << "  Electrode Charge Recomb  : " << stats.charge_recomb_edep_eV << " eV\n"
+              << "  Total Calorimeter Energy : " << measured_total_eV << " eV (Expected "
+              << expected_total_eV << " eV)\n"
+              << "  End-to-End Runtime       : " << dt_ms << " ms\n";
     std::cout << "========================================================================\n";
 }
 
@@ -199,11 +229,15 @@ int main(int argc, char** argv) {
     const auto t_init1 = std::chrono::steady_clock::now();
     const double init_ms = std::chrono::duration<double, std::milli>(t_init1 - t_init0).count();
 
-    std::cout << "Initialized Germanium Christoffel 2D LUT (181x361x3) + Decay Inverse-CDF in "
-              << std::fixed << std::setprecision(2) << init_ms << " ms.\n\n";
+    std::cout << "Initialized Germanium Lattice (Christoffel LUT + Decay Inverse-CDF + 4 HV L-Valleys)\n"
+              << "  Init time : " << std::fixed << std::setprecision(2) << init_ms << " ms\n"
+              << "  m_cond_e  : " << (ge_lattice.electron_mass_eV() / units::m_e_eV) << " m_e, "
+              << "l0_e = " << (ge_lattice.l0_electron() / units::nm) << " nm, "
+              << "l0_h = " << (ge_lattice.l0_hole() / units::nm) << " nm\n\n";
 
     run_caustics_demo(ge_lattice);
     run_detector_benchmark(ge_lattice, num_primaries, num_threads);
+    run_recoil_charge_luke_demo(ge_lattice);
 
     return 0;
 }

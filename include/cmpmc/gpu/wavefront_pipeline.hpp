@@ -201,7 +201,7 @@ private:
                                     std::vector<SensorHit>& hits,
                                     SimStats& stats,
                                     Rng& rng) const {
-        SmallVec<double, 64> kaplan_refl;
+        KaplanBuffer kaplan_refl;
         for (auto& ev : q.q_boundary) {
             PhononTrack& trk = ev.trk;
             const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(ev.surface_id)];

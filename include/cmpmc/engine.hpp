@@ -428,7 +428,7 @@ public:
         if (detector_.jump_to_ballistic.enabled)
             require_validated(detector_.allow_unvalidated, "jump_to_ballistic",
                               "fixed-radius shell displacement, rounded N_iso, 48-daughter cap, isotropic k");
-        SmallVec<double, 64> kaplan_reflected;
+        KaplanBuffer kaplan_reflected;
 
         while (!stack.empty()) {
             PhononTrack trk = stack.back();

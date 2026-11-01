@@ -105,11 +105,11 @@ struct KaplanFilm : public SuperconductorFilmConfig {
     // Eq. (1) [FT]; WP5-v4 Sec. 5). A photon seed skips the entry-escape step.
     enum class Seed : uint8_t { Phonon, Photon };
 
-    double absorb_phonon(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
+    double absorb_phonon(double energy, KaplanBuffer& reflected_energies, Rng& rng) const noexcept {
         return absorb_quantum(energy, reflected_energies, rng, Seed::Phonon);
     }
 
-    double absorb_quantum(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng,
+    double absorb_quantum(double energy, KaplanBuffer& reflected_energies, Rng& rng,
                           Seed seed) const noexcept {
         reflected_energies.clear();
         const bool photon = (seed == Seed::Photon);
@@ -127,10 +127,10 @@ struct KaplanFilm : public SuperconductorFilmConfig {
             ? static_cast<int>(std::ceil(energy / (2.0 * high_qp_limit * gap_energy)))
             : 1;
 
-        SmallVec<double, 64> qp_energies;
-        SmallVec<double, 64> phon_energies;
-        SmallVec<double, 64> next_phon;
-        SmallVec<double, 64> next_qp;
+        KaplanBuffer qp_energies;
+        KaplanBuffer phon_energies;
+        KaplanBuffer next_phon;
+        KaplanBuffer next_qp;
 
         const double init_e = energy / n_pairs;
         if (photon) {
@@ -254,7 +254,7 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         KaplanFilm f = *this;
         f.subgap_absorption = 0.0; f.absorber_eff = 1.0; f.absorber_eff_slope = 0.0; f.temperature = 0.0;
         double s1 = 0.0, s2 = 0.0;
-        SmallVec<double, 64> refl;
+        KaplanBuffer refl;
         for (int i = 0; i < n_events; ++i) {
             const double nqp = f.absorb_quantum(omega, refl, rng, seed) / gap_energy;
             s1 += nqp; s2 += nqp * nqp;
@@ -296,7 +296,7 @@ private:
         return rng.uniform() < subgap_absorption;
     }
 
-    inline double calc_direct_absorption(double energy, SmallVec<double, 64>& keep, Rng& rng) const noexcept {
+    inline double calc_direct_absorption(double energy, KaplanBuffer& keep, Rng& rng) const noexcept {
         if (do_direct_absorption(energy, rng)) return energy;
         keep.push_back(energy);
         return 0.0;
@@ -310,8 +310,8 @@ private:
     }
 
     inline double calc_qp_absorption(double qpE,
-                                     SmallVec<double, 64>& phon_energies,
-                                     SmallVec<double, 64>& qp_energies,
+                                     KaplanBuffer& phon_energies,
+                                     KaplanBuffer& qp_energies,
                                      Rng& rng) const noexcept {
         if (rng.uniform() > calc_qp_efficiency(qpE)) return 0.0;
         if (qpE >= low_qp_limit * gap_energy) {
@@ -351,7 +351,7 @@ public:
         : film_(film), abs_(N_E * N_S), off_(N_E * N_S + 1, 0) {
         Rng rng(seed);
         const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-12);
-        SmallVec<double, 64> refl;
+        KaplanBuffer refl;
         for (int ie = 0; ie < N_E; ++ie) {
             const double E = node_energy(ie, two_delta);
             for (int s = 0; s < N_S; ++s) {
@@ -364,7 +364,7 @@ public:
     }
 
     // Lookup with the KaplanFilm::absorb_phonon signature
-    inline double absorb_phonon_fast(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
+    inline double absorb_phonon_fast(double energy, KaplanBuffer& reflected_energies, Rng& rng) const noexcept {
         const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-12);
         const double u = (energy / two_delta - 1.0) / (E_MAX_DIV_2GAP - 1.0) * (N_E - 1);
         if (film_.is_subgap(energy) || u < 0.0 || u > N_E - 1) {

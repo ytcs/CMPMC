@@ -29,7 +29,7 @@ template <class F> static double mean_pdf(F&& p, double lo, double hi) {
 }
 
 static double cascade_with_reentry(const KaplanFilm& film, const KaplanSurrogateLUT* lut, double E, double p_ret, Rng& rng) {
-    std::vector<double> todo{E}; double edep = 0; SmallVec<double, 64> refl;
+    std::vector<double> todo{E}; double edep = 0; KaplanBuffer refl;
     while (!todo.empty()) {
         const double e = todo.back(); todo.pop_back();
         edep += lut ? lut->absorb_phonon_fast(e, refl, rng) : film.absorb_phonon(e, refl, rng);
@@ -58,7 +58,7 @@ int main() {
     thick.film_thickness = 1.0; thick.subgap_absorption = 0.0; thick.keep_all_phonons = false;
     thick.temperature = 0.0; thick.absorber_eff = 1.0;
     for (double W : {2.0001, 2.5, 3.0, 3.9, 4.5, 5.0, 6.0, 8.0, 10.0, 20.0, 40.0, 100.0}) {
-        double s = 0; const int NS = (W > 50) ? 20000 : 100000; SmallVec<double, 64> refl;
+        double s = 0; const int NS = (W > 50) ? 20000 : 100000; KaplanBuffer refl;
         for (int i = 0; i < NS; ++i) s += thick.absorb_phonon(W * D, refl, rng);
         const double eta = s / NS / (W * D);
         const std::string tag = "eta_pb no-loss, Omega=" + std::to_string(W).substr(0, 5) + "D";
@@ -69,7 +69,7 @@ int main() {
     {
         KaplanFilm f = film; f.subgap_absorption = 0.0; f.keep_all_phonons = false;
         for (double W : {3.0, 5.0, 10.0, 20.0, 40.0}) {
-            double s = 0; const int NS = 100000; SmallVec<double, 64> refl;
+            double s = 0; const int NS = 100000; KaplanBuffer refl;
             for (int i = 0; i < NS; ++i) s += f.absorb_phonon(W * D, refl, rng);
             audit::info("eta_pb 600 nm Al film (escape on), Omega=" + std::to_string(W).substr(0, 4) + "D", s / NS / (W * D));
         }

@@ -107,7 +107,7 @@ public:
                        Rng& rng) const {
         PhononBatchSoA16 batch{};
         alignas(64) double u_rand[PhononBatchSoA16::W];
-        SmallVec<double, 64> kaplan_refl;
+        KaplanBuffer kaplan_refl;
 
         const double R      = detector_.solid.radius;
         const double H      = detector_.solid.half_z;

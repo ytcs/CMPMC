@@ -14,7 +14,8 @@
 //      of 2D-4D phonons (documented model difference: E = D assumption for the excess, +4% per
 //      1401.1937 Sec. V).
 //  (d) no-loss asymptote 0.59 (1401.1937 [FT]; WP5-v4 Sec. 5: 0.57-0.6) and the F_qp report.
-//  (e) eta decreases monotonically as the film gets thinner (tau_l down) at fixed Omega >= 5D.
+//  (e) eta decreases monotonically as the film gets thinner (tau_l down) at fixed Omega >= 5D;
+//  (f) cascade energy closure at 50-350 D (former 64-entry buffer lost energy above ~130 D).
 #include "audit_common.hpp"
 #include "cmpmc/kaplan.hpp"
 #include <string>
@@ -96,6 +97,22 @@ int main() {
         bool mono = true;
         for (int a = 1; a < 5; ++a) mono = mono && (eta_tab[a][b] > eta_tab[a - 1][b]);
         audit::check("eta increases with tau_l at hv=" + std::to_string((int)hv[b]) + "D", mono ? 1.0 : 0.0, 1.0, 0.0);
+    }
+    // (f) energy closure of the cascade at Debye-scale energies (buffer capacity): absorbed +
+    //     re-emitted = incident for every event (legacy loss law, thin film, sub-gap re-emission)
+    {
+        KaplanFilm g = KaplanFilm::aluminum_sensor();
+        g.subgap_absorption = 0.0; g.temperature = 0.0;
+        KaplanBuffer refl;
+        for (double W : {50.0, 150.0, 210.0, 350.0}) {
+            double worst = 0.0;
+            for (int i = 0; i < 2000; ++i) {
+                double e = g.absorb_phonon(W * D, refl, rng);
+                for (double r : refl) e += r;
+                worst = std::max(worst, std::abs(e / (W * D) - 1.0));
+            }
+            audit::check("cascade energy closure, Omega=" + std::to_string((int)W) + "D (max over 2000)", worst, 0.0, 0.0, 1e-12);
+        }
     }
     return audit::result();
 }

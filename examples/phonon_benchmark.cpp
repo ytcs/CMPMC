@@ -474,7 +474,7 @@ static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
     }
 
     KaplanSurrogateLUT kaplan_lut(KaplanFilm::aluminum_sensor());
-    SmallVec<double, 64> refl;
+    KaplanBuffer refl;
     const double fast_edep = kaplan_lut.absorb_phonon_fast(2.0 * units::meV, refl, rng);
 
     std::cout << std::fixed << std::setprecision(2)

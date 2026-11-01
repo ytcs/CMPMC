@@ -76,7 +76,7 @@ public:
         const Vec3 k = cfg_.orient.mul_transpose(k_det).unit();
         Vec3 vg[3];
         double vp[3];
-        physics::solve_christoffel_exact(C_, cfg_.density, k, vg, vp);
+        physics::solve_christoffel_cardano(C_, cfg_.density, k, vg, vp);
         const Vec3& v = vg[static_cast<int>(mode)];
         const double mag = v.norm();
         return {(cfg_.orient * (v / std::max(mag, 1e-12))).unit(), mag};

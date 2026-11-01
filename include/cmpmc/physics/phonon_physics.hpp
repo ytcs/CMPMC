@@ -130,6 +130,52 @@ inline double tamura_tt_pdf(double x, const CrystalConfig& cfg) noexcept {
     return t1 * t1 + t2 * t2;
 }
 
+// Mode labelling and group velocities from the Christoffel eigen-decomposition:
+//   L = polarization most parallel to k_unit; FT/ST ordered by phase speed;
+//   v_group,d = (1/(rho v_p)) e_i C_ijld k_j e_l.
+inline void christoffel_modes_from_eigen(const double C[3][3][3][3], double density, const Vec3& k_unit,
+                                         const double evals[3], const Vec3 evecs[3],
+                                         Vec3 vg_out[3], double vphase_out[3]) noexcept {
+    const double inv_rho = 1.0 / density;
+    // Mode classification: L = polarization most parallel to k_unit; FT/ST sorted by phase speed
+    int long_idx = 0;
+    double max_dot = -1.0;
+    for (int i = 0; i < 3; ++i) {
+        const double d = std::abs(evecs[i].dot(k_unit));
+        if (d > max_dot) {
+            max_dot = d;
+            long_idx = i;
+        }
+    }
+    const int rem1 = (long_idx + 1) % 3;
+    const int rem2 = (long_idx + 2) % 3;
+    const int ft_idx = (evals[rem1] >= evals[rem2]) ? rem1 : rem2;
+    const int st_idx = (evals[rem1] >= evals[rem2]) ? rem2 : rem1;
+    const int mode_indices[3] = {long_idx, ft_idx, st_idx};
+
+    for (int m = 0; m < 3; ++m) {
+        const int idx = mode_indices[m];
+        const double vp = std::sqrt(std::max(evals[idx], 1.0));
+        vphase_out[m] = vp;
+        const Vec3& e = evecs[idx];
+        const Vec3 slow = k_unit / vp;
+
+        Vec3 vg{0.0, 0.0, 0.0};
+        for (int dim = 0; dim < 3; ++dim) {
+            double sum = 0.0;
+            for (int i = 0; i < 3; ++i) {
+                for (int j = 0; j < 3; ++j) {
+                    for (int l = 0; l < 3; ++l) {
+                        sum += e[i] * C[i][j][l][dim] * slow[j] * e[l];
+                    }
+                }
+            }
+            vg[dim] = sum * inv_rho;
+        }
+        vg_out[m] = vg;
+    }
+}
+
 // --- 4. Exact Christoffel Acoustic Wave Solver ---
 // Solves the 3x3 real symmetric eigenvalue problem:
 //   D_il(k) * e_l = v_phase^2 * e_i,   where D_il(k) = (1/rho) * C_ijlm * k_j * k_m
@@ -199,44 +245,58 @@ inline void solve_christoffel_exact(const double C[3][3][3][3],
         {V[0][1], V[1][1], V[2][1]},
         {V[0][2], V[1][2], V[2][2]}
     };
+    christoffel_modes_from_eigen(C, density, k_unit, evals, evecs, vg_out, vphase_out);
+}
 
-    // Mode classification: L = polarization most parallel to k_unit; FT/ST sorted by phase speed
-    int long_idx = 0;
-    double max_dot = -1.0;
-    for (int i = 0; i < 3; ++i) {
-        const double d = std::abs(evecs[i].dot(k_unit));
-        if (d > max_dot) {
-            max_dot = d;
-            long_idx = i;
-        }
-    }
-    const int rem1 = (long_idx + 1) % 3;
-    const int rem2 = (long_idx + 2) % 3;
-    const int ft_idx = (evals[rem1] >= evals[rem2]) ? rem1 : rem2;
-    const int st_idx = (evals[rem1] >= evals[rem2]) ? rem2 : rem1;
-    const int mode_indices[3] = {long_idx, ft_idx, st_idx};
-
-    for (int m = 0; m < 3; ++m) {
-        const int idx = mode_indices[m];
-        const double vp = std::sqrt(std::max(evals[idx], 1.0));
-        vphase_out[m] = vp;
-        const Vec3& e = evecs[idx];
-        const Vec3 slow = k_unit / vp;
-
-        Vec3 vg{0.0, 0.0, 0.0};
-        for (int dim = 0; dim < 3; ++dim) {
+// --- 5. Closed-form Christoffel solve (trigonometric Cardano roots + cross-product eigenvectors) ---
+// Eigenvalues of the symmetric 3x3 D: with q = tr D/3, p = sqrt(tr((D - qI)^2)/6), B = (D - qI)/p,
+// r = det(B)/2: lambda_k = q + 2p cos(acos(r)/3 + 2 pi k/3) (Smith, CACM 4, 168 (1961); standard
+// algebra [D]). Eigenvector of lambda: the largest cross product of two rows of D - lambda I.
+// Near a degeneracy (relative eigenvalue gap < gap_tol, e.g. FT/ST along [100], [111]) the
+// eigenvectors are ill-conditioned: fall back to the Jacobi solve.
+inline void solve_christoffel_cardano(const double C[3][3][3][3], double density, const Vec3& k_unit,
+                                      Vec3 vg_out[3], double vphase_out[3], double gap_tol = 1e-4) noexcept {
+    double D[3][3];
+    const double inv_rho = 1.0 / density;
+    for (int i = 0; i < 3; ++i)
+        for (int l = i; l < 3; ++l) {
             double sum = 0.0;
-            for (int i = 0; i < 3; ++i) {
-                for (int j = 0; j < 3; ++j) {
-                    for (int l = 0; l < 3; ++l) {
-                        sum += e[i] * C[i][j][l][dim] * slow[j] * e[l];
-                    }
-                }
-            }
-            vg[dim] = sum * inv_rho;
+            for (int j = 0; j < 3; ++j)
+                for (int m = 0; m < 3; ++m) sum += C[i][j][l][m] * k_unit[j] * k_unit[m];
+            D[i][l] = D[l][i] = sum * inv_rho;
         }
-        vg_out[m] = vg;
+    const double q = (D[0][0] + D[1][1] + D[2][2]) / 3.0;
+    const double p1 = D[0][1] * D[0][1] + D[0][2] * D[0][2] + D[1][2] * D[1][2];
+    const double p2 = (D[0][0] - q) * (D[0][0] - q) + (D[1][1] - q) * (D[1][1] - q) + (D[2][2] - q) * (D[2][2] - q) + 2.0 * p1;
+    const double p = std::sqrt(p2 / 6.0);
+    if (!(p > 1e-12 * std::abs(q))) { solve_christoffel_exact(C, density, k_unit, vg_out, vphase_out); return; }
+    double B[3][3];
+    for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) B[i][j] = (D[i][j] - (i == j ? q : 0.0)) / p;
+    const double detB = B[0][0] * (B[1][1] * B[2][2] - B[1][2] * B[2][1])
+                      - B[0][1] * (B[1][0] * B[2][2] - B[1][2] * B[2][0])
+                      + B[0][2] * (B[1][0] * B[2][1] - B[1][1] * B[2][0]);
+    const double r = std::clamp(0.5 * detB, -1.0, 1.0);
+    const double phi = std::acos(r) / 3.0;
+    double ev[3];
+    ev[0] = q + 2.0 * p * std::cos(phi);
+    ev[2] = q + 2.0 * p * std::cos(phi + 2.0943951023931957);
+    ev[1] = 3.0 * q - ev[0] - ev[2];
+    const double scale = std::abs(ev[0]);
+    if (std::abs(ev[0] - ev[1]) < gap_tol * scale || std::abs(ev[1] - ev[2]) < gap_tol * scale) {
+        solve_christoffel_exact(C, density, k_unit, vg_out, vphase_out);
+        return;
     }
+    Vec3 evecs[3];
+    for (int k = 0; k < 3; ++k) {
+        const Vec3 r0{D[0][0] - ev[k], D[0][1], D[0][2]};
+        const Vec3 r1{D[1][0], D[1][1] - ev[k], D[1][2]};
+        const Vec3 r2{D[2][0], D[2][1], D[2][2] - ev[k]};
+        const Vec3 c01 = r0.cross(r1), c02 = r0.cross(r2), c12 = r1.cross(r2);
+        const double n01 = c01.norm2(), n02 = c02.norm2(), n12 = c12.norm2();
+        const Vec3& best = (n01 >= n02 && n01 >= n12) ? c01 : ((n02 >= n12) ? c02 : c12);
+        evecs[k] = best.unit();
+    }
+    christoffel_modes_from_eigen(C, density, k_unit, ev, evecs, vg_out, vphase_out);
 }
 
 } // namespace cmpmc::physics

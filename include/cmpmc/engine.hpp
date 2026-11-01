@@ -94,6 +94,12 @@ struct DetectorModel {
     uint32_t max_bounces       = 5000;
     double min_phonon_eV       = 10.0 * units::ueV; // Cutoff below 2*Delta_W
     double luke_sample_fraction= 1.0;               // Fraction of Luke phonons tracked (with weight = 1/frac)
+    // Charge step control: the field may change the carrier wavevector by at most
+    // charge_max_dk_frac * max(k_s, |k|) per step (HV frame for electrons), so that the
+    // Luke rate (v/3l0)(M-1)^3/M sampled at the start of a step stays ~constant over it
+    // (Leman 1109.1193 Sec. V.D). 0 restores the legacy fixed 100 ps cap.
+    double charge_max_dk_frac  = 0.05;
+    double charge_dt_cap_s     = 100.0 * units::ps;
 
     // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
     physics::JumpToBallisticConfig jump_to_ballistic{};
@@ -148,7 +154,7 @@ public:
 
             const double q_sign = (trk.type == ExcitationType::Electron) ? -1.0 : +1.0;
 
-            for (uint32_t step = 0; step < 500'000; ++step) {
+            for (uint32_t step = 0; step < 20'000'000; ++step) {
                 stats.charge_steps++;
 
                 const Vec3 E_Vm = detector_.electric_field_at(trk.pos);
@@ -164,7 +170,19 @@ public:
                 const double r_ion_h = physics::trap_ionization_h_rate(trk.type, v_cur_mag, lattice_.config());
                 const double r_tot   = r_luke + r_iv + r_trap + r_ion_e + r_ion_h;
 
-                const double dt_max_accel = 100.0 * units::ps;
+                double dt_max_accel = detector_.charge_dt_cap_s;
+                if (detector_.charge_max_dk_frac > 0.0) {
+                    const bool is_e = (trk.type == ExcitationType::Electron);
+                    const double ks = is_e ? lattice_.k_sound_electron() : lattice_.k_sound_hole();
+                    const double k_now = is_e
+                        ? lattice_.ellipsoidal_to_spherical(trk.valley, trk.p_eV / units::hbarc).norm()
+                        : trk.p_eV.norm() / units::hbarc;
+                    const double dk_rate = E_Vm.norm() * units::c_light / units::hbarc *
+                                           (is_e ? lattice_.hv_max_scale() : 1.0);   // |dk/dt| bound [1/(m s)]
+                    if (dk_rate > 0.0)
+                        dt_max_accel = std::min(dt_max_accel,
+                                                detector_.charge_max_dk_frac * std::max(ks, k_now) / dk_rate);
+                }
                 const double dt_phys = (r_tot > 1.0)
                     ? (-std::log(rng.uniform()) / r_tot)
                     : std::numeric_limits<double>::infinity();

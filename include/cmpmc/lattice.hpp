@@ -231,6 +231,8 @@ public:
     double l0_hole() const noexcept { return l0_h_; }
     double k_sound_electron() const noexcept { return k_sound_e_; }
     double k_sound_hole() const noexcept { return k_sound_h_; }
+    // Largest stretch factor of the Herring-Vogt map k -> k* (sqrt(m_c / m_min))
+    double hv_max_scale() const noexcept { return std::max({hv_sqrt_inv_.x, hv_sqrt_inv_.y, hv_sqrt_inv_.z}); }
 
     inline Vec3 rotate_to_valley(size_t iv, const Vec3& v) const noexcept {
         return valley_rot_[iv] * v;

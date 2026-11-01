@@ -2,11 +2,26 @@
 
 **CMPMC** is a fast, standalone C++20 condensed-matter Monte Carlo engine that ports and optimizes the physics of [G4CMP](https://github.com/kelseymh/G4CMP) without any Geant4 or CLHEP dependencies. It is architected from the ground up as a **multi-excitation transport engine** supporting **Phonons**, **Conduction-Band Drift Electrons** (with anisotropic Herring-Vogt valleys), **Valence-Band Drift Holes**, **Superconducting Bogoliubov Quasiparticles**, and extensible collective excitations (**Excitons, Magnons, Plasmons**).
 
+## Validation status (read this first)
+
+What is validated, against what, and to what tolerance is in **[`VALIDATION.md`](VALIDATION.md)** (one row per module, with its CTest target in `tests/`).
+Run `cmake -B build && cmake --build build && (cd build && ctest)`; 16 targets pass.
+In short:
+- **Validated defaults:** octahedral-LUT phonon kinematics, isotope scattering and L-phonon decay (Leman 1109.1193 Eqs. (9)–(14)), diffuse surfaces without down-conversion
+  (1109.1193 §IV.G), the Kaplan film cascade, NTL charge transport with Δk-capped stepping (WP7-E-v3 (E11) closure), Fano/(W4) partition.
+- **Validated, opt-in (recommended for campaign runs):** `FilmLossModel::KaplanRateCompetition` + `KaplanFilm::pair_breaking_efficiency` (η_pb(Ω, τ_l), vs 1401.1937 Fig. 4);
+  `SurfaceProperty::amm_interface` (isotropic AMM/DMM, vs WP8-R §3.2); `ChargeStepping::LemanSecondOrder` (1109.1193 Eqs. (26)–(30)); `ChargeRelease::{BulkDebye, ElectrodeFilm}`
+  with `fermi_level_above_Ev_eV` (WP7-E-v3 ledger, soft surface-recombination phonons); `KinematicsMode::Exact` (closed-form Christoffel).
+- **Unsupported (throw `UnvalidatedModuleError` unless `DetectorModel::allow_unvalidated = true`):** jump-to-ballistic, next-event estimation, the SoA and GPU wavefront engines,
+  bulk 3D-QP transport, the IV Matrix rate, and the G4CMP demo surface polynomials (`g4cmp_demo_*`). Their design notes are in [`DESIGN_NOTES.md`](DESIGN_NOTES.md).
+- `transport_charges_fast_chord` now runs the validated Leman second-order stepping.
+- Still G4CMP example values: the `AluminumFilm()` parameters film_absorption, subgap_absorption and gap (VALIDATION.md, last section).
+
 See:
 - **[`PLAN.md`](PLAN.md)**: Architectural breakdown, G4CMP-to-CMPMC module mapping, and the **10,000x Speedup Roadmap** (Octahedral LUTs, SIMD SoA wavefronts, GPU hardware texture/RT cores, and algorithmic physics shortcuts).
 - **[`CONTRIBUTING_PHYSICS.md`](CONTRIBUTING_PHYSICS.md)**: Physicist's cookbook for adding new crystals/films, modifying scattering/decay formulas, or plugging in new excitation species in ~30 lines of C++20.
 
-## Complete Feature Set (100% G4CMP Physics Port + Optimizations)
+## Feature Set (G4CMP port + optimizations; validation status per module in VALIDATION.md)
 
 - **Zero External Dependencies (`include/cmpmc/core.hpp`):** Header-only C++20 library requiring only the C++ standard library and `std::thread`.
 - **All 8 Bravais Symmetries, 12 `CrystalMaps` Presets & `config.txt` Reader (`include/cmpmc/materials/`):**
@@ -35,5 +50,6 @@ See:
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
-./build/phonon_benchmark 5000
+(cd build && ctest)                 # physics validation suite (VALIDATION.md)
+./build/phonon_benchmark 5000       # exercises unvalidated modules too (opted in explicitly)
 ```

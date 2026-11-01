@@ -3,6 +3,10 @@
 
 **CMPMC** is a standalone, zero-dependency C++20 Monte Carlo transport engine for low-temperature condensed matter detectors (superconducting qubits, TES/KID dark matter & neutrino calorimeters, and cryogenic semiconductor crystals). It replaces the Geant4 + G4CMP stack downstream of primary energy deposition with a flat, data-oriented multi-excitation transport kernel supporting **Phonons, Conduction Electrons, Valence Holes, Bogoliubov Quasiparticles**, and future collective excitations (**Excitons, Magnons, Plasmons**).
 
+> **Validation status (R16).** The tiers below describe the speed roadmap. Which modules are validated is recorded in [`VALIDATION.md`](VALIDATION.md), not here.
+> Tier-2/3/4 items marked *unsupported* there (SoA and GPU wavefronts, jump-to-ballistic, NEE) are guarded at runtime and must not feed physics results. The Tier-4 chord stepping was
+> replaced by Leman second-order stepping (§3, Tier 4 item 3). Design notes for everything not yet validated are in [`DESIGN_NOTES.md`](DESIGN_NOTES.md).
+
 ---
 
 ## 1. Why Replace Geant4 in G4CMP?
@@ -135,16 +139,17 @@ Beyond hardware acceleration, four physics-informed algorithmic shortcuts drasti
      - The multiplicity and energy CDF of re-emitted crystal phonons $P(N_{\text{refl}}, \{E_{\text{refl}}\} \mid E_{\text{in}})$
    - At runtime, a sensor film hit is resolved in **2 table lookups (~5 ns, zero loops)**, making `KaplanFilm` 100% branchless on both CPU and GPU!
 
-2. **Asymptotic "Jump-to-Ballistic" Anharmonic Downconversion Kernel:**
+2. **Asymptotic "Jump-to-Ballistic" Anharmonic Downconversion Kernel:** *(R16: unsupported, guarded; DESIGN_NOTES §13.)*
    - Primary phonons start at the Debye frequency ($\nu_D \sim 2\text{–}15\text{ THz}$) where $\lambda_{\text{iso}} \propto \nu^{-4}$ and $\lambda_{\text{anh}} \propto \nu^{-5}$ are nanometers to microns. High-frequency phonons execute hundreds of tiny diffusive steps within a $<20\,\mu\text{m}$ sphere around the vertex before downconverting to the quasi-ballistic regime ($\nu \lesssim 0.4\text{ THz}$, where $\lambda_{\text{MFP}} \sim \text{cm}$).
    - **Shortcut:** Pre-compute the universal self-similar Tamura downconversion Green's function $G(\nu_0 \to \nu_{\text{bal}}, \Delta r, \Delta t)$ down to a configurable quasi-ballistic cutoff frequency $\nu_{\text{cut}}$ (where $\lambda_{\text{iso}}(\nu_{\text{cut}}) = 0.05 \times d_{\text{wall}}$). Any phonon generated well inside the bulk with $\nu > \nu_{\text{cut}}$ can jump directly to its post-cascade quasi-ballistic daughter spectrum $(\nu_i, \Delta\vec{r}_i, \Delta t_i)$ in a single step, eliminating **60%–80% of all bulk scattering steps**!
 
-3. **Macroscopic Chord Stepping (CSDA + Straggling) for High-Voltage Luke Emission:**
+3. **Macroscopic Chord Stepping (CSDA + Straggling) for High-Voltage Luke Emission:** *(R16: the fixed-Mach chord engine was removed; `transport_charges_fast_chord`
+   now runs the validated Leman second-order stepping, 1109.1193 Eqs. (26)–(30), tests/test_leman_stepping. The text below is the original proposal.)*
    - At high bias voltages ($50\text{–}100\text{ V}$ in HV/CDMSlite detectors), each drifting electron or hole emits $>20,000$ Neganov-Trofimov-Luke phonons, requiring $>100,000$ sub-micron steps per charge carrier.
    - Once a carrier reaches terminal drift velocity ($v_d \gtrsim v_{\text{sound}}$), it travels along a deterministic electric-field streamline determined by its Herring-Vogt valley mobility $\mu_v \vec{E}$, converting electrostatic work $e \vec{E} \cdot d\vec{x}$ into Cherenkov phonons with a stationary energy/angle spectrum.
    - **Shortcut:** Advance the carrier in macroscopic chords ($\Delta s \sim 50\text{–}200\,\mu\text{m}$, limited only by intervalley scattering or E-field curvature) and sample the weighted Luke phonons directly along the chord. This accelerates high-voltage charge + Luke transport by **50x–200x**.
 
-4. **Next-Event Estimation (NEE) & Russian Roulette for Sparse Sensors (Qubits / KIDs):**
+4. **Next-Event Estimation (NEE) & Russian Roulette for Sparse Sensors (Qubits / KIDs):** *(R16: NEE unsupported, guarded, DESIGN_NOTES §14; roulette is unbiased.)*
    - In superconducting qubit chips or sparse KID arrays where active sensors cover $<1\%$ of the surface area, $>99\%$ of phonons bounce thousands of times before thermalizing.
    - **Shortcut:** Combine **Russian Roulette** after $N_{\text{bounces}} > 50$ (surviving tracks get weight $w \leftarrow w / p_{\text{surv}}$) with **Next-Event Estimation (Shadow Rays)** at diffuse reflections, projecting deterministic weighted contributions directly onto small sensor pads.
 
@@ -179,17 +184,23 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Port patterned 2D sensor/electrode surface masks (`G4CMPVElectrodePattern.cc`) into `include/cmpmc/geometry/surface_mask.hpp` (`ElectrodePatternMask` with SuperCDMS 5-channel QET and rectangular KID/qubit grid presets).
 - [x] Implement `256 x 256` `float4` **Octahedral Equal-Area LUT** (`CrystalLattice::map_k_to_vg_oct`, zero trig) and pre-baked `KaplanSurrogateLUT` (`KaplanSurrogateLUT::absorb_phonon_fast`).
 
-### Burst 6: Tier-4 Algorithmic Physics Shortcuts (Jump-to-Ballistic, HV Chord Luke Stepping & Russian Roulette) (**COMPLETED**)
+### Burst 6: Tier-4 Algorithmic Physics Shortcuts (Jump-to-Ballistic, HV Chord Luke Stepping & Russian Roulette) (**IMPLEMENTED; jump-to-ballistic unsupported, chord replaced by Leman stepping (R16)**)
 - [x] Implement `physics::jump_to_ballistic_cascade()` in `include/cmpmc/physics/fast_shortcuts.hpp` to jump high-frequency diffusive Debye phonons directly to their quasi-ballistic daughter ensemble.
 - [x] Implement `SimulationEngine::transport_charges_fast_chord()` in `include/cmpmc/engine.hpp` for macroscopic chord Neganov-Trofimov-Luke emission at high voltage (50–100 V HV/CDMSlite).
 - [x] Implement unbiased Russian Roulette variance reduction (`physics::apply_russian_roulette()`).
 
-### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**COMPLETED**)
+### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**IMPLEMENTED; unsupported, guarded (R16), DESIGN_NOTES §12**)
 - [x] Implement 16-wide cache-aligned `PhononBatchSoA16` and `WavefrontSoAEngine::transport_soa()` in `include/cmpmc/wavefront_soa.hpp` (vectorized ray-cylinder intersection, free-flight sampling, zero-trig Octahedral LUT lookup, and `KaplanSurrogateLUT`).
 
-### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**COMPLETED**)
+### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**IMPLEMENTED; unsupported, guarded (R16), DESIGN_NOTES §12**)
 - [x] Implement non-divergent 4-stage wavefront queue pipeline (`stage1_free_flight_and_raytrace`, `stage2_isotope_scatter`, `stage3_anharmonic_decay`, `stage4_boundary_and_kaplan`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.
 
-### Burst 9: Primary Track Step Accumulator / Hit Merging (`G4CMPHitMerging`) & Sparse-Sensor Next-Event Estimation (**COMPLETED**)
+### Burst 9: Primary Track Step Accumulator / Hit Merging (`G4CMPHitMerging`) & Sparse-Sensor Next-Event Estimation (**IMPLEMENTED; NEE unsupported, guarded (R16)**)
 - [x] Port `G4CMPStepInfo`, `G4CMPStepAccumulator`, `G4CMPHitMerging`, and `G4CMPSecondaryProduction` into `include/cmpmc/partition.hpp` (`PrimaryStepInput`, `StepAccumulator`, `HitMerger`).
 - [x] Implement Next-Event Estimation (`physics::evaluate_sparse_sensor_nee()`) for sparse (<1% coverage) qubit / KID sensors in `include/cmpmc/physics/fast_shortcuts.hpp`.
+
+### R15–R16: physics audit and validation (branch `paer-sota`)
+- [x] R15 (CMPMC-AUD): decay kinematics (Leman Eqs. (9)–(14)), octahedral default, presets, Δk-capped charge stepping, valley orientation, surrogate LUT, G4CMP surface three-way split; tests T1–T10.
+- [x] R16 (CMPMC-DEV): η_pb(Ω, τ_l) with exact Kaplan τ_pb (vs 1401.1937 Fig. 4); isotropic AMM/DMM interface transmission (vs WP8-R §3.2); runtime guards for unvalidated modules;
+      diffuse default surfaces (demo polynomials guarded); Kaplan buffer 256; collection release per the WP7-E-v3 ledger with soft electrode-film phonons; Leman second-order stepping;
+      closed-form Christoffel solve; fast-chord → Leman. Status per module: VALIDATION.md; open items: DESIGN_NOTES.md.

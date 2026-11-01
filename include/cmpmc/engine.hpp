@@ -103,6 +103,22 @@ struct DetectorModel {
     double charge_max_dk_frac  = 0.05;
     double charge_dt_cap_s     = 100.0 * units::ps;
 
+    // Energy released when a carrier is collected (campaign WP7-E-v3 Sec. 1.3 ledger, row
+    // "collection": E_pairs -> H_ph at the contact): E_rel = E_kin + (E_c - mu_F) for e-,
+    // E_kin + (mu_F - E_v) for h+. fermi_level_above_Ev_eV = mu_F - E_v (< 0: mid-gap, [E]).
+    //   RecordOnly        legacy: E_rel recorded as a SensorHit, no phonons emitted;
+    //   BulkDebye         E_rel emitted at the contact as hard phonons of h nu_D (bulk multiphonon
+    //                     release; WP8-R Sec. 1.2 item (b));
+    //   ElectrodeFilm     E_rel enters the surface's Kaplan film (the electrode): QPs are recorded as
+    //                     the hit (D N_qp + sub-gap absorption), and the phonons that escape the film
+    //                     are re-injected into the crystal (Lambertian, DOS modes): the soft, ballistic
+    //                     surface-recombination population of 1109.1193 p.17 [FT] (REF-WP8-R-A F2,
+    //                     -B B1). Surfaces without a Kaplan film fall back to RecordOnly.
+    enum class ChargeRelease : uint8_t { RecordOnly, BulkDebye, ElectrodeFilm };
+    ChargeRelease charge_release   = ChargeRelease::RecordOnly;
+    double fermi_level_above_Ev_eV = -1.0;
+    double electrode_seed_max_gap  = 80.0;   // ElectrodeFilm: E_rel enters as quanta of <= this x Delta (numerical)
+
     // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
     physics::JumpToBallisticConfig jump_to_ballistic{};
     // Opt-in for modules without a validated reference path (core/validation.hpp). Default off:
@@ -239,15 +255,28 @@ public:
                             continue;
                         }
 
-                        const double recomb_eV = (trk.ekin + 0.5 * e_gap) * trk.weight;
+                        const double e_rel = collection_release_energy(trk);
                         stats.charges_collected++;
+                        double hit_eV = e_rel;
+                        if (detector_.charge_release == DetectorModel::ChargeRelease::BulkDebye) {
+                            hit_eV = 0.0;
+                            emit_debye_phonons(e_rel, trk.pos, bhit.inward_normal, trk.time, trk.weight,
+                                               phonon_stack, rng);
+                        } else if (detector_.charge_release == DetectorModel::ChargeRelease::ElectrodeFilm &&
+                                   surf.kaplan_sensor.has_value()) {
+                            double lost = 0.0;
+                            hit_eV = electrode_film_release(*surf.kaplan_sensor, e_rel, trk.pos, bhit.inward_normal,
+                                                            trk.time, trk.weight, phonon_stack, lost, rng);
+                            stats.escaped_or_killed_eV += lost * trk.weight;
+                        }
+                        const double recomb_eV = hit_eV * trk.weight;
                         stats.charge_recomb_edep_eV += recomb_eV;
                         stats.total_deposited_eV    += recomb_eV;
                         hits.push_back(SensorHit{
                             .pos             = trk.pos,
                             .time            = trk.time,
                             .edep            = recomb_eV,
-                            .incident_energy = trk.ekin + 0.5 * e_gap,
+                            .incident_energy = e_rel,
                             .surface_id      = bhit.surface_id,
                             .excitation      = trk.type,
                             .mode            = PhononMode::L,
@@ -893,6 +922,45 @@ private:
     const CrystalLattice& lattice_;
     const DetectorModel& detector_;
     ChargePhysics charge_phys_;
+
+    // ---- carrier collection release (WP7-E-v3 Sec. 1.3, "collection") ----
+    inline double collection_release_energy(const ChargeTrack& trk) const noexcept {
+        const double eg = lattice_.config().bandgap;
+        const double muF = (detector_.fermi_level_above_Ev_eV >= 0.0) ? detector_.fermi_level_above_Ev_eV : 0.5 * eg;
+        return trk.ekin + ((trk.type == ExcitationType::Electron) ? (eg - muF) : muF);
+    }
+    inline void emit_debye_phonons(double e_rel, const Vec3& pos, const Vec3& n_in, double t, double w,
+                                   std::vector<PhononTrack>& out, Rng& rng) const {
+        const double ed = lattice_.debye_energy();
+        const int n = std::max(1, static_cast<int>(std::round(e_rel / ed)));
+        const Vec3 p0 = pos + n_in * 1e-11;
+        for (int i = 0; i < n; ++i) {
+            const PhononMode m = lattice_.sample_dos_mode(rng);
+            out.push_back(make_track(p0, sample_inward_wavevector(m, n_in, rng), m, e_rel / n, t, w));
+        }
+    }
+    // Returns the energy absorbed in the film (hit); escaped phonons are pushed to `out`;
+    // `lost` collects thermalised energy. e_rel = hit + sum(out) + lost exactly.
+    inline double electrode_film_release(const KaplanFilm& film, double e_rel, const Vec3& pos, const Vec3& n_in,
+                                         double t, double w, std::vector<PhononTrack>& out, double& lost,
+                                         Rng& rng) const {
+        const double qmax = std::max(4.0, detector_.electrode_seed_max_gap) * film.gap_energy;
+        const int n = std::max(1, static_cast<int>(std::ceil(e_rel / qmax)));
+        const double q = e_rel / n;
+        const Vec3 p0 = pos + n_in * 1e-11;
+        double absorbed = 0.0, emitted = 0.0;
+        KaplanBuffer refl;
+        for (int i = 0; i < n; ++i) {
+            absorbed += film.absorb_quantum(q, refl, rng, KaplanFilm::Seed::Photon);
+            for (size_t k = 0; k < refl.size(); ++k) {
+                const PhononMode m = lattice_.sample_dos_mode(rng);
+                out.push_back(make_track(p0, sample_inward_wavevector(m, n_in, rng), m, refl[k], t, w));
+                emitted += refl[k];
+            }
+        }
+        lost = std::max(0.0, e_rel - absorbed - emitted);
+        return absorbed;
+    }
 
     inline Vec3 sample_inward_wavevector(PhononMode mode, const Vec3& inward_normal, Rng& rng) const noexcept {
         for (int trial = 0; trial < 16; ++trial) {

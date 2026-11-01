@@ -14,6 +14,7 @@ set(CMPMC_AUDIT_TESTS
     test_pair_breaking
     test_interface_amm
     test_guards
+    test_charge_release
 )
 foreach(t ${CMPMC_AUDIT_TESTS})
     add_executable(${t} ${t}.cpp)

@@ -168,4 +168,159 @@ private:
     ChargePhysics charge_phys_;
 };
 
+// ============================================================================
+// PrimaryStepInput, StepAccumulator & HitMerger
+// Replaces: G4CMPStepInfo, G4CMPStepAccumulator, G4CMPHitMerging &
+//           G4CMPSecondaryProduction
+//
+// Consolidates adjacent continuous dE/dx or nuclear recoil steps along a
+// primary particle track within `combining_step_length` (default 1 mm),
+// partitions the merged deposit into e-/h+ pairs and prompt phonons, and
+// distributes secondaries along the trajectory chord with Gaussian jitter
+// (dl +- dl/6) for charged tracks or at the endpoint for neutral tracks.
+// ============================================================================
+struct PrimaryStepInput {
+    int32_t track_id       = 1;
+    Vec3 start_pos         = {0.0, 0.0, 0.0};
+    Vec3 end_pos           = {0.0, 0.0, 0.0};
+    double time_s          = 0.0;
+    double edep_eV         = 0.0; // Electronic / total energy deposit (eV)
+    double eniel_eV        = 0.0; // Non-ionizing nuclear recoil deposit (eV)
+    bool is_charged        = true;
+    bool hit_boundary      = false;
+    bool track_stopped     = false;
+};
+
+struct StepAccumulator {
+    int32_t track_id   = -1;
+    uint32_t n_steps   = 0;
+    Vec3 start_pos     = {0.0, 0.0, 0.0};
+    Vec3 end_pos       = {0.0, 0.0, 0.0};
+    double time_s      = 0.0;
+    double edep_eV     = 0.0;
+    double eniel_eV    = 0.0;
+    bool is_charged    = true;
+
+    constexpr void clear() noexcept {
+        n_steps    = 0;
+        start_pos  = {0.0, 0.0, 0.0};
+        end_pos    = {0.0, 0.0, 0.0};
+        time_s     = 0.0;
+        edep_eV    = 0.0;
+        eniel_eV   = 0.0;
+        is_charged = true;
+    }
+
+    inline void add(const PrimaryStepInput& step) noexcept {
+        if (n_steps == 0) {
+            track_id   = step.track_id;
+            start_pos  = step.start_pos;
+            is_charged = step.is_charged;
+        }
+        end_pos   = step.end_pos;
+        time_s    = std::max(time_s, step.time_s);
+        edep_eV  += step.edep_eV;
+        eniel_eV += step.eniel_eV;
+        n_steps++;
+    }
+};
+
+class HitMerger {
+public:
+    explicit HitMerger(const CrystalLattice& lattice,
+                       double combining_step_length_m = 1.0 * units::mm,
+                       const PartitionOptions& opts = PartitionOptions{})
+        : partitioner_(lattice),
+          combining_step_length_(combining_step_length_m),
+          opts_(opts) {}
+
+    // Process a single primary track step; flushes accumulated steps into
+    // `out_charges` and `out_phonons` whenever distance >= combining_step_length,
+    // boundary is reached, or track stops.
+    bool process_step(const PrimaryStepInput& step,
+                      std::vector<ChargeTrack>& out_charges,
+                      std::vector<PhononTrack>& out_phonons,
+                      Rng& rng) {
+        const double dist = (step.end_pos - accum_.end_pos).norm();
+        const bool do_add = (accum_.n_steps == 0 ||
+                             dist < combining_step_length_ ||
+                             step.hit_boundary ||
+                             step.track_stopped);
+
+        const bool has_energy = (step.edep_eV > 0.0 || step.eniel_eV > 0.0);
+        if (do_add && has_energy) {
+            accum_.add(step);
+        }
+
+        const bool ready = (accum_.n_steps > 0) &&
+                           ((step.end_pos - accum_.end_pos).norm() >= combining_step_length_ ||
+                            !do_add ||
+                            step.hit_boundary ||
+                            step.track_stopped);
+
+        if (ready) {
+            flush(out_charges, out_phonons, rng);
+        }
+
+        if (!do_add && has_energy) {
+            accum_.add(step);
+        }
+
+        return ready;
+    }
+
+    // Flush any remaining accumulated energy deposits at the end of an event
+    EnergyPartition::Result flush(std::vector<ChargeTrack>& out_charges,
+                                  std::vector<PhononTrack>& out_phonons,
+                                  Rng& rng) {
+        EnergyPartition::Result res{};
+        if (accum_.n_steps == 0 || (accum_.edep_eV <= 0.0 && accum_.eniel_eV <= 0.0)) {
+            accum_.clear();
+            return res;
+        }
+
+        const size_t c_start = out_charges.size();
+        const size_t p_start = out_phonons.size();
+
+        const double total_e = accum_.edep_eV + accum_.eniel_eV;
+        const bool is_nr     = (accum_.eniel_eV > 0.5 * total_e);
+        const Vec3 mid_pos   = (accum_.start_pos + accum_.end_pos) * 0.5;
+
+        res = partitioner_.partition_deposit(
+            mid_pos, accum_.time_s, total_e, is_nr, out_charges, out_phonons, rng, opts_);
+
+        // For charged tracks with non-zero chord length, spread generated secondaries
+        // along [start_pos, end_pos] with Gaussian step jitter dl +- dl/6
+        // matching G4CMPHitMerging::GeneratePositions
+        const Vec3 traj   = accum_.end_pos - accum_.start_pos;
+        const double len  = traj.norm();
+        const size_t nsec = (out_charges.size() - c_start) + (out_phonons.size() - p_start);
+
+        if (accum_.is_charged && len > 1e-7 && nsec > 1) {
+            const Vec3 tdir   = traj / len;
+            const double dl   = len / static_cast<double>(nsec);
+            const double sigl = dl / 6.0;
+            Vec3 cur_pos      = accum_.start_pos;
+
+            for (size_t i = c_start; i < out_charges.size(); ++i) {
+                cur_pos += tdir * std::max(0.0, dl + sigl * rng.normal());
+                out_charges[i].pos = cur_pos;
+            }
+            for (size_t i = p_start; i < out_phonons.size(); ++i) {
+                cur_pos += tdir * std::max(0.0, dl + sigl * rng.normal());
+                out_phonons[i].pos = cur_pos;
+            }
+        }
+
+        accum_.clear();
+        return res;
+    }
+
+private:
+    EnergyPartition partitioner_;
+    double combining_step_length_;
+    PartitionOptions opts_;
+    StepAccumulator accum_{};
+};
+
 } // namespace cmpmc

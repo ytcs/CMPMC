@@ -649,6 +649,67 @@ static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattic
               << ", Hits=" << stats.sensor_hits << "\n"
               << "  Energy Conservation      : Deposited " << stats.total_deposited_eV
               << " eV / Injected " << stats.total_injected_eV << " eV\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 12. Primary Track Hit Merging (G4CMPHitMerging) & Sparse Sensor NEE (Burst 9)
+// ============================================================================
+static void run_hit_merging_and_nee_benchmark(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [12] Primary Track Hit Merging (G4CMPHitMerging) & Sparse NEE (Burst 9)\n";
+    std::cout << "========================================================================\n";
+
+    // Simulate a 20-substep ionizing electron track (each substep 200 um, 15 eV dE/dx)
+    // consolidated by HitMerger with combining_step_length = 1.0 mm
+    PartitionOptions popts{};
+    popts.max_sampled_phonons = 100;
+    HitMerger merger(ge_lattice, 1.0 * units::mm, popts);
+
+    Rng rng(9999);
+    std::vector<ChargeTrack> charges;
+    std::vector<PhononTrack> phonons;
+    uint32_t merged_flushes = 0;
+
+    for (int i = 0; i < 20; ++i) {
+        const double z0 = (i * 0.2) * units::mm;
+        const double z1 = ((i + 1) * 0.2) * units::mm;
+        PrimaryStepInput step{
+            .track_id      = 1,
+            .start_pos     = {0.0, 0.0, z0},
+            .end_pos       = {0.0, 0.0, z1},
+            .time_s        = i * 1.0 * units::ps,
+            .edep_eV       = 15.0 * units::eV,
+            .eniel_eV      = 0.0,
+            .is_charged    = true,
+            .hit_boundary  = false,
+            .track_stopped = (i == 19)
+        };
+        if (merger.process_step(step, charges, phonons, rng)) {
+            merged_flushes++;
+        }
+    }
+
+    // Evaluate Next-Event Estimation (NEE) from a bottom-face diffuse reflection
+    // onto a sparse 100-um radius superconducting qubit pad on the top face
+    double flight_dt = 0.0;
+    const double nee_edep = physics::evaluate_sparse_sensor_nee(
+        /*refl_pos=*/{0.0, 0.0, -1.27 * units::cm},
+        /*refl_inward_normal=*/{0.0, 0.0, 1.0},
+        /*pad_center=*/{0.0, 0.0, +1.27 * units::cm},
+        /*pad_inward_normal=*/{0.0, 0.0, -1.0},
+        /*pad_radius_m=*/100.0 * units::um,
+        /*phonon_energy_eV=*/1.0 * units::meV,
+        /*track_weight=*/1.0,
+        flight_dt,
+        /*v_group_ms=*/3500.0
+    );
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "  HitMerger (20 x 200um steps, 1mm combo): " << merged_flushes << " merged flushes -> "
+              << charges.size() << " charges + " << phonons.size() << " prompt phonons\n"
+              << "  Sparse Qubit NEE (R=100um @ 2.54cm)    : " << std::scientific << nee_edep
+              << std::fixed << " eV deterministic weight (dt = " << (flight_dt / units::us) << " us)\n";
     std::cout << "========================================================================\n";
 }
 
@@ -681,6 +742,7 @@ int main(int argc, char** argv) {
     run_fast_shortcuts_benchmark(ge_lattice);
     run_simd_soa_benchmark(ge_lattice);
     run_gpu_wavefront_pipeline_benchmark(ge_lattice);
+    run_hit_merging_and_nee_benchmark(ge_lattice);
 
     return 0;
 }

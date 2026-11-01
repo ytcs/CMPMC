@@ -189,3 +189,7 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 
 ### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**COMPLETED**)
 - [x] Implement non-divergent 4-stage wavefront queue pipeline (`stage1_free_flight_and_raytrace`, `stage2_isotope_scatter`, `stage3_anharmonic_decay`, `stage4_boundary_and_kaplan`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.
+
+### Burst 9: Primary Track Step Accumulator / Hit Merging (`G4CMPHitMerging`) & Sparse-Sensor Next-Event Estimation (**COMPLETED**)
+- [x] Port `G4CMPStepInfo`, `G4CMPStepAccumulator`, `G4CMPHitMerging`, and `G4CMPSecondaryProduction` into `include/cmpmc/partition.hpp` (`PrimaryStepInput`, `StepAccumulator`, `HitMerger`).
+- [x] Implement Next-Event Estimation (`physics::evaluate_sparse_sensor_nee()`) for sparse (<1% coverage) qubit / KID sensors in `include/cmpmc/physics/fast_shortcuts.hpp`.

@@ -65,28 +65,29 @@ inline uint32_t jump_to_ballistic_cascade(PhononTrack& trk,
     local_q.push_back({trk.pos, trk.energy, trk.time, trk.mode});
 
     uint32_t fast_steps = 0;
-    const double fTT = lattice.config().fTT_frac;
+    const double fTT   = lattice.config().fTT_frac;
+    const double dos_L = std::max(0.05, lattice.config().fLDOS);
     const double v_avg = 0.3333333333333333 * (lattice.config().v_sound + 2.0 * lattice.config().v_trans);
 
     while (!local_q.empty() && (final_q.size() + local_q.size() < 48)) {
         MiniPhonon p = local_q.back();
         local_q.pop_back();
 
-        if (p.energy <= e_cut || p.mode != PhononMode::L) {
+        if (p.energy <= e_cut) {
             final_q.push_back(p);
             continue;
         }
 
         const double r_iso  = lattice.isotope_rate(p.energy);
-        const double r_down = lattice.downconversion_rate(PhononMode::L, p.energy);
+        // Above e_cut, rapid isotope scattering mixes modes (T <-> L with fraction dos_L),
+        // so the effective downconversion rate of the mode-mixed state is dos_L * r_down(L)
+        const double r_down_L = lattice.downconversion_rate(PhononMode::L, p.energy);
+        const double r_down   = (p.mode == PhononMode::L) ? r_down_L : (dos_L * r_down_L);
         if (r_down <= 1e-6) {
             final_q.push_back(p);
             continue;
         }
 
-        // Mean time until anharmonic L-phonon decay: tau_down = 1 / r_down
-        // During tau_down, the phonon undergoes N_iso ~ r_iso / r_down isotropic scatters
-        // with diffusive 3D displacement sigma_r = sqrt(2 * D * dt), D = v * lambda_iso / 3.
         const double dt_decay = -std::log(rng.uniform()) / r_down;
         const double n_iso_expected = r_iso * dt_decay;
         const uint64_t n_iso = static_cast<uint64_t>(n_iso_expected + 0.5);
@@ -101,16 +102,25 @@ inline uint32_t jump_to_ballistic_cascade(PhononTrack& trk,
 
         if (rng.uniform() < fTT) {
             stat_decays_TT++;
-            const double x = lattice.sample_tt_energy_fraction(rng);
-            final_q.push_back({p.pos, x * p.energy, p.time, lattice.sample_transverse_mode(rng)});
-            final_q.push_back({p.pos, (1.0 - x) * p.energy, p.time, lattice.sample_transverse_mode(rng)});
+            const double x  = lattice.sample_tt_energy_fraction(rng);
+            const double e1 = x * p.energy;
+            const double e2 = (1.0 - x) * p.energy;
+            const PhononMode m1 = lattice.sample_transverse_mode(rng);
+            const PhononMode m2 = lattice.sample_transverse_mode(rng);
+            if (e1 > e_cut) local_q.push_back({p.pos, e1, p.time, m1});
+            else            final_q.push_back({p.pos, e1, p.time, m1});
+            if (e2 > e_cut) local_q.push_back({p.pos, e2, p.time, m2});
+            else            final_q.push_back({p.pos, e2, p.time, m2});
         } else {
             stat_decays_LT++;
-            const double x = lattice.sample_lt_energy_fraction(rng);
-            // Daughter 1 is L-mode (may still be > e_cut and continue cascading!)
-            local_q.push_back({p.pos, x * p.energy, p.time, PhononMode::L});
-            // Daughter 2 is T-mode
-            final_q.push_back({p.pos, (1.0 - x) * p.energy, p.time, lattice.sample_transverse_mode(rng)});
+            const double x  = lattice.sample_lt_energy_fraction(rng);
+            const double e1 = x * p.energy;
+            const double e2 = (1.0 - x) * p.energy;
+            const PhononMode m2 = lattice.sample_transverse_mode(rng);
+            if (e1 > e_cut) local_q.push_back({p.pos, e1, p.time, PhononMode::L});
+            else            final_q.push_back({p.pos, e1, p.time, PhononMode::L});
+            if (e2 > e_cut) local_q.push_back({p.pos, e2, p.time, m2});
+            else            final_q.push_back({p.pos, e2, p.time, m2});
         }
     }
 

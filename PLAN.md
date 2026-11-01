@@ -184,8 +184,8 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Implement `SimulationEngine::transport_charges_fast_chord()` in `include/cmpmc/engine.hpp` for macroscopic chord Neganov-Trofimov-Luke emission at high voltage (50–100 V HV/CDMSlite).
 - [x] Implement unbiased Russian Roulette variance reduction (`physics::apply_russian_roulette()`).
 
-### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**NEXT**)
-- [ ] Implement 16-wide cache-aligned `PhononWavefrontSoA` batch transport kernel in `include/cmpmc/wavefront_soa.hpp` (vectorized ray-cylinder intersection, free-flight sampling, and Octahedral LUT lookup).
+### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**COMPLETED**)
+- [x] Implement 16-wide cache-aligned `PhononBatchSoA16` and `WavefrontSoAEngine::transport_soa()` in `include/cmpmc/wavefront_soa.hpp` (vectorized ray-cylinder intersection, free-flight sampling, zero-trig Octahedral LUT lookup, and `KaplanSurrogateLUT`).
 
-### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**PLANNED**)
+### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**NEXT**)
 - [ ] Implement non-divergent 4-stage wavefront queue pipeline (`FreeFlightRayStage`, `IsotopeScatterStage`, `AnharmonicDecayStage`, `SurfaceKaplanStage`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.

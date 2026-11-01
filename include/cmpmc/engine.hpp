@@ -412,7 +412,7 @@ public:
                 }
 
                 // Tier-4 Jump-to-Ballistic Downconversion Shortcut (if enabled)
-                if (detector_.jump_to_ballistic.enabled && trk.mode == PhononMode::L) {
+                if (detector_.jump_to_ballistic.enabled) {
                     const double r_xy = std::hypot(trk.pos.x, trk.pos.y);
                     const double clearance = std::min(detector_.solid.radius - r_xy,
                                                       detector_.solid.half_z - std::abs(trk.pos.z));

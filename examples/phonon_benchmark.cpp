@@ -1,4 +1,5 @@
 #include "cmpmc/engine.hpp"
+#include "cmpmc/wavefront_soa.hpp"
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -500,10 +501,11 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
     det_std.surfaces[0].prob_abs = 1.0;
     det_std.surfaces[1].kaplan_sensor = std::nullopt;
     det_std.surfaces[1].prob_abs = 1.0;
+    det_std.surfaces[2].prob_refl = 0.95; // 5% sidewall loss
 
     DetectorModel det_jtb = det_std;
     det_jtb.jump_to_ballistic.enabled = true;
-    det_jtb.jump_to_ballistic.target_freq_GHz = 600.0;
+    det_jtb.jump_to_ballistic.target_freq_GHz = 350.0;
 
     SimulationEngine eng_std(ge_lattice, det_std);
     SimulationEngine eng_jtb(ge_lattice, det_jtb);
@@ -568,6 +570,43 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
               << " equiv Luke phonons)\n"
               << "  50V HV Total Calorimeter : " << measured_hv_eV << " eV (Expected "
               << expected_hv_eV << " eV, Runtime: " << ms_hv << " ms)\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 10. Tier-2 16-Wide SIMD Structure-of-Arrays (SoA) Wavefront Kernel (Burst 7)
+// ============================================================================
+static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [10] Tier-2 16-Wide SIMD Structure-of-Arrays (SoA) Wavefront (Burst 7)\n";
+    std::cout << "========================================================================\n";
+
+    DetectorModel det{};
+    WavefrontSoAEngine soa_engine(ge_lattice, det);
+    SimulationEngine scalar_engine(ge_lattice, det);
+
+    Rng rng(7007);
+    std::vector<PhononTrack> stack;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    const double e_init = ge_lattice.debye_energy();
+    for (int i = 0; i < 400; ++i) {
+        stack.push_back(scalar_engine.make_track({0.0, 0.0, 0.0}, rng.isotropic_dir(), PhononMode::L, e_init));
+        stats.total_injected_eV += e_init;
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    soa_engine.transport_soa(stack, hits, stats, rng);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double dt_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double m_steps_s = (stats.total_steps / 1e6) / std::max(1e-9, dt_ms * 1e-3);
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "  SoA 16-Wide Batch Steps  : " << stats.total_steps << " steps in "
+              << dt_ms << " ms (" << m_steps_s << " M steps/s single-thread!)\n"
+              << "  Al QET Sensor Hits       : " << stats.sensor_hits << " hits, Deposited = "
+              << stats.total_deposited_eV << " eV / " << stats.total_injected_eV << " eV\n";
     std::cout << "========================================================================\n";
 }
 
@@ -598,6 +637,7 @@ int main(int argc, char** argv) {
     run_superconductor_3d_demo();
     run_mesh_field_and_mask_demo(ge_lattice);
     run_fast_shortcuts_benchmark(ge_lattice);
+    run_simd_soa_benchmark(ge_lattice);
 
     return 0;
 }

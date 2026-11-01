@@ -404,7 +404,9 @@ private:
 
         valley_rot_.clear();
         for (const Vec3& raw_dir : cfg_.valley_dirs) {
-            const Vec3 vdir = raw_dir.unit();
+            // valley_dirs are crystal-frame axes; all charge vectors (p, E, v) live in
+            // the detector frame, so rotate the axis with the crystal orientation.
+            const Vec3 vdir = (cfg_.orient * raw_dir.unit()).unit();
             const double vx = vdir.x;
             const double vy = vdir.y;
             const double vz = vdir.z;

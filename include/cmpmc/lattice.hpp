@@ -59,8 +59,32 @@ public:
     const physics::Superconductor3D& superconductor() const noexcept { return sc_3d_; }
     double debye_energy() const noexcept { return cfg_.debye_freq * units::h_Planck; }
 
-    // Fast Bilinear LUT Query: wavevector k_dir -> (vg_dir, vg_mag)
+    // Kinematics query: wavevector k_dir -> (vg_dir, vg_mag).
+    // The legacy 181 x 361 bilinear (cos theta, phi) table is uniform in cos theta, so
+    // near the poles (the crystal z axis, e.g. [001] towards the sensor faces) its polar
+    // step is ~8 degrees: tests/test_christoffel measured a 99th-percentile direction
+    // error of 14-16 mrad for L phonons in Si/Ge (max 84 mrad; 0.3-0.4 rad for FT/ST).
+    // Default is now the 256 x 256 octahedral table (q99 0.2 mrad for L, 2.5 mrad for
+    // FT/ST; errors > 1 degree only on FT/ST degeneracy lines, 0.1% of directions; and
+    // faster). Exact per-call Christoffel solve (~1.7 us) and the legacy table remain
+    // selectable.
+    enum class KinematicsMode : uint8_t { Octahedral = 0, Exact = 1, Bilinear = 2 };
+    void set_kinematics_mode(KinematicsMode m) noexcept { kin_mode_ = m; }
+    KinematicsMode kinematics_mode() const noexcept { return kin_mode_; }
+
+    inline Kinematics map_k_to_vg_exact(PhononMode mode, const Vec3& k_det) const noexcept {
+        const Vec3 k = cfg_.orient.mul_transpose(k_det).unit();
+        Vec3 vg[3];
+        double vp[3];
+        physics::solve_christoffel_exact(C_, cfg_.density, k, vg, vp);
+        const Vec3& v = vg[static_cast<int>(mode)];
+        const double mag = v.norm();
+        return {(cfg_.orient * (v / std::max(mag, 1e-12))).unit(), mag};
+    }
+
     inline Kinematics map_k_to_vg(PhononMode mode, const Vec3& k_det) const noexcept {
+        if (kin_mode_ == KinematicsMode::Octahedral) return map_k_to_vg_oct(mode, k_det);
+        if (kin_mode_ == KinematicsMode::Exact) return map_k_to_vg_exact(mode, k_det);
         const Vec3 k = cfg_.orient.mul_transpose(k_det).unit();
 
         const double ctheta = std::clamp(k.z, -1.0, 1.0);
@@ -276,6 +300,7 @@ private:
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
     physics::Superconductor3D sc_3d_;
+    KinematicsMode kin_mode_ = KinematicsMode::Octahedral;
 
     inline const Vec3& lut_at(int m, int i, int j) const noexcept {
         return vg_lut_[(m * N_CTHETA + i) * N_PHI + j];

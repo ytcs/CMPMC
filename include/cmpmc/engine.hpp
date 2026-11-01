@@ -102,6 +102,12 @@ struct DetectorModel {
     // (Leman 1109.1193 Sec. V.D). 0 restores the legacy fixed 100 ps cap.
     double charge_max_dk_frac  = 0.05;
     double charge_dt_cap_s     = 100.0 * units::ps;
+    // Charge time stepping: FirstOrderDkCap (R15 P5: rates frozen over a step bounded by
+    // charge_max_dk_frac) or LemanSecondOrder (1109.1193 Sec. V.E Eqs. (26)-(30): rate linear in
+    // time over a sampling step bounded by charge_sampling_dk_frac, inverse-CDF event time).
+    enum class ChargeStepping : uint8_t { FirstOrderDkCap, LemanSecondOrder };
+    ChargeStepping charge_stepping   = ChargeStepping::FirstOrderDkCap;
+    double charge_sampling_dk_frac   = 0.25;
 
     // Energy released when a carrier is collected (campaign WP7-E-v3 Sec. 1.3 ledger, row
     // "collection": E_pairs -> H_ph at the contact): E_rel = E_kin + (E_c - mu_F) for e-,
@@ -188,20 +194,15 @@ public:
                 stats.charge_steps++;
 
                 const Vec3 E_Vm = detector_.electric_field_at(trk.pos);
-                const Vec3 v_cur = charge_phys_.velocity(trk);
-                const double v_cur_mag = v_cur.norm();
+                const bool second_order = (detector_.charge_stepping == DetectorModel::ChargeStepping::LemanSecondOrder);
+                const double dk_frac = second_order ? detector_.charge_sampling_dk_frac : detector_.charge_max_dk_frac;
 
-                const double r_luke = charge_phys_.luke_emission_rate(trk);
-                const double r_iv   = (trk.type == ExcitationType::Electron)
-                    ? lattice_.intervalley_rate(trk.ekin, E_Vm)
-                    : 0.0;
-                const double r_trap  = physics::charge_trapping_rate(trk.type, v_cur_mag, lattice_.config());
-                const double r_ion_e = physics::trap_ionization_e_rate(trk.type, v_cur_mag, lattice_.config());
-                const double r_ion_h = physics::trap_ionization_h_rate(trk.type, v_cur_mag, lattice_.config());
-                const double r_tot   = r_luke + r_iv + r_trap + r_ion_e + r_ion_h;
+                const ChargeRates R0 = charge_rates(trk, E_Vm);
+                double r_luke = R0.luke, r_iv = R0.iv, r_trap = R0.trap, r_ion_e = R0.ion_e, r_ion_h = R0.ion_h;
+                double r_tot = R0.tot;
 
                 double dt_max_accel = detector_.charge_dt_cap_s;
-                if (detector_.charge_max_dk_frac > 0.0) {
+                if (dk_frac > 0.0) {
                     const bool is_e = (trk.type == ExcitationType::Electron);
                     const double ks = is_e ? lattice_.k_sound_electron() : lattice_.k_sound_hole();
                     const double k_now = is_e
@@ -211,11 +212,34 @@ public:
                                            (is_e ? lattice_.hv_max_scale() : 1.0);   // |dk/dt| bound [1/(m s)]
                     if (dk_rate > 0.0)
                         dt_max_accel = std::min(dt_max_accel,
-                                                detector_.charge_max_dk_frac * std::max(ks, k_now) / dk_rate);
+                                                dk_frac * std::max(ks, k_now) / dk_rate);
                 }
-                const double dt_phys = (r_tot > 1.0)
-                    ? (-std::log(rng.uniform()) / r_tot)
-                    : std::numeric_limits<double>::infinity();
+                double dt_phys;
+                if (second_order) {
+                    // Leman 1109.1193 Sec. V.E: rate linear over the sampling step,
+                    // Gamma(t) = a0 + a1 t, a0 = Gamma(t0) (Eq. (29)), a1 = (Gamma(t1) - Gamma(t0))/(t1 - t0)
+                    // (Eq. (30)); event time t = (sqrt(a0^2 - 2 a1 ln u) - a0)/a1 (Eq. (28)).
+                    ChargeTrack trial = trk;
+                    trial.p_eV += E_Vm * (q_sign * units::c_light * dt_max_accel);
+                    trial.ekin = (trk.type == ExcitationType::Electron)
+                        ? lattice_.map_p_to_ekin_electron(trial.valley, trial.p_eV)
+                        : lattice_.map_p_to_ekin_hole(trial.p_eV);
+                    const double a0 = R0.tot;
+                    const double a1 = (charge_rates(trial, E_Vm).tot - a0) / dt_max_accel;
+                    const double lnu = std::log(rng.uniform());
+                    if (std::abs(a1) * dt_max_accel <= 1e-9 * std::max(a0, 1e-300)) {
+                        dt_phys = (a0 > 0.0) ? (-lnu / a0) : std::numeric_limits<double>::infinity();
+                    } else {
+                        const double disc = a0 * a0 - 2.0 * a1 * lnu;
+                        dt_phys = (disc < 0.0) ? std::numeric_limits<double>::infinity()   // a1 < 0: no event before Gamma -> 0
+                                               : (std::sqrt(disc) - a0) / a1;
+                        if (!(dt_phys >= 0.0)) dt_phys = std::numeric_limits<double>::infinity();
+                    }
+                } else {
+                    dt_phys = (r_tot > 1.0)
+                        ? (-std::log(rng.uniform()) / r_tot)
+                        : std::numeric_limits<double>::infinity();
+                }
                 const double dt = std::min(dt_phys, dt_max_accel);
 
                 const Vec3 dp_eV = E_Vm * (q_sign * units::c_light * dt);
@@ -294,6 +318,11 @@ public:
                     : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
                 if (dt_phys <= dt_max_accel) {
+                    if (second_order) {   // process selection with the rates at the event (Leman step 7b)
+                        const ChargeRates R = charge_rates(trk, E_Vm);
+                        r_luke = R.luke; r_iv = R.iv; r_trap = R.trap; r_ion_e = R.ion_e; r_ion_h = R.ion_h; r_tot = R.tot;
+                        if (r_tot <= 0.0) continue;
+                    }
                     const double u_proc = rng.uniform() * r_tot;
                     if (u_proc < r_trap) {
                         stats.charges_trapped++;
@@ -922,6 +951,19 @@ private:
     const CrystalLattice& lattice_;
     const DetectorModel& detector_;
     ChargePhysics charge_phys_;
+
+    struct ChargeRates { double luke, iv, trap, ion_e, ion_h, tot; };
+    inline ChargeRates charge_rates(const ChargeTrack& trk, const Vec3& E_Vm) const noexcept {
+        const double v = charge_phys_.velocity(trk).norm();
+        ChargeRates r{};
+        r.luke  = charge_phys_.luke_emission_rate(trk);
+        r.iv    = (trk.type == ExcitationType::Electron) ? lattice_.intervalley_rate(trk.ekin, E_Vm) : 0.0;
+        r.trap  = physics::charge_trapping_rate(trk.type, v, lattice_.config());
+        r.ion_e = physics::trap_ionization_e_rate(trk.type, v, lattice_.config());
+        r.ion_h = physics::trap_ionization_h_rate(trk.type, v, lattice_.config());
+        r.tot   = r.luke + r.iv + r.trap + r.ion_e + r.ion_h;
+        return r;
+    }
 
     // ---- carrier collection release (WP7-E-v3 Sec. 1.3, "collection") ----
     inline double collection_release_energy(const ChargeTrack& trk) const noexcept {

@@ -1,0 +1,5 @@
+build/
+*.o
+*.out
+phonon_benchmark
+.DS_Store

@@ -3,6 +3,7 @@
 #include "cmpmc/charge.hpp"
 #include "cmpmc/core.hpp"
 #include "cmpmc/lattice.hpp"
+#include "cmpmc/physics/niel_models.hpp"
 #include <algorithm>
 #include <cmath>
 #include <vector>
@@ -10,10 +11,14 @@
 namespace cmpmc {
 
 // ============================================================================
-// LindhardNIEL & EnergyPartition
-// Replaces: G4CMPEnergyPartition, G4CMPLindhardNIEL, G4CMPFanoBinomial
+// EnergyPartition (All 5 NIEL Models + Exact Fano Interpolated Binomial)
+// Replaces: G4CMPEnergyPartition, G4CMPLindhardNIEL, G4CMPLewinSmithNIEL,
+//           G4CMPSarkisNIEL, G4CMPImpactTunlNIEL, G4CMPEmpiricalNIEL,
+//           and G4CMPFanoBinomial
 // ============================================================================
 struct PartitionOptions {
+    physics::NIELModel niel_model = physics::NIELModel::Lindhard;
+    physics::EmpiricalNIELParams empirical_niel{};
     bool use_fano_fluctuations   = true;
     bool use_charge_cloud        = true;  // Distribute e-/h+ pairs in 3D sphere (G4CMPChargeCloud)
     uint32_t max_sampled_pairs   = 1000;  // Downsample e-/h+ pairs above this count (with weight)
@@ -77,7 +82,9 @@ public:
                              const Options& opts = Options{}) const {
         Result res{};
         res.total_edep_eV  = total_edep_eV;
-        res.lindhard_yield = is_nuclear_recoil ? lindhard_ionization_yield(total_edep_eV) : 1.0;
+        res.lindhard_yield = is_nuclear_recoil
+            ? physics::compute_ionization_yield(opts.niel_model, total_edep_eV, lattice_.config(), opts.empirical_niel)
+            : 1.0;
         res.ionizing_eV    = total_edep_eV * res.lindhard_yield;
         res.niel_eV        = total_edep_eV - res.ionizing_eV;
 
@@ -85,15 +92,14 @@ public:
         const double e_pair = lattice_.config().pair_energy;
         const double fano   = lattice_.config().fano_factor;
 
-        // 1. Sample number of e-/h+ pairs with Fano fluctuations
+        // 1. Sample number of e-/h+ pairs with exact Fano interpolated binomial (G4CMPFanoBinomial)
         if (res.ionizing_eV >= e_gap && e_pair > 0.0) {
             const double mean_pairs = res.ionizing_eV / e_pair;
             if (!opts.use_fano_fluctuations || mean_pairs < 1.0) {
                 res.n_pairs_true = static_cast<uint64_t>(std::floor(mean_pairs + rng.uniform()));
             } else {
-                const double sigma = std::sqrt(fano * mean_pairs);
-                const double sampled = std::round(mean_pairs + sigma * rng.normal());
-                res.n_pairs_true = static_cast<uint64_t>(std::clamp(sampled, 1.0, std::floor(res.ionizing_eV / e_gap)));
+                const uint64_t max_pairs = static_cast<uint64_t>(std::floor(res.ionizing_eV / e_gap));
+                res.n_pairs_true = std::min(max_pairs, physics::sample_fano_binomial(mean_pairs, fano, rng));
             }
         }
 

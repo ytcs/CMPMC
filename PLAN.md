@@ -168,11 +168,11 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Port trap impact ionization (`G4CMPDriftTrapIonization.cc` — `e_on_e`, `e_on_h`, `h_on_e`, `h_on_h` impurity liberation channels).
 - [x] Port boundary reflection/recombination (`G4CMPDriftBoundaryProcess.cc`, `G4CMPDriftRecombinationProcess.cc`) and 3D initial charge cloud (`G4CMPChargeCloud.cc`).
 
-### Burst 3: All 5 NIEL Partition Models & Exact Fano Binomial Sampler (**IN PROGRESS**)
-- [ ] Port `G4CMPLindhardNIEL.cc`, `G4CMPLewinSmithNIEL.cc`, `G4CMPSarkisNIEL.cc`, `G4CMPImpactTunlNIEL.cc`, and `G4CMPEmpiricalNIEL.cc` into `include/cmpmc/physics/niel_models.hpp`.
-- [ ] Port exact Fano-factor generalized binomial sampling (`G4CMPFanoBinomial.cc`) into `include/cmpmc/partition.hpp`.
+### Burst 3: All 5 NIEL Partition Models & Exact Fano Binomial Sampler (**COMPLETED**)
+- [x] Port `G4CMPLindhardNIEL.cc`, `G4CMPLewinSmithNIEL.cc`, `G4CMPSarkisNIEL.cc`, `G4CMPImpactTunlNIEL.cc`, and `G4CMPEmpiricalNIEL.cc` into `include/cmpmc/physics/niel_models.hpp`.
+- [x] Port exact Fano-factor generalized binomial sampling (`G4CMPFanoBinomial.cc`) into `include/cmpmc/physics/niel_models.hpp` and `include/cmpmc/partition.hpp`.
 
-### Burst 4: Full 3D Superconducting Bogoliubov Quasiparticle Transport (**TODO**)
+### Burst 4: Full 3D Superconducting Bogoliubov Quasiparticle Transport (**IN PROGRESS**)
 - [ ] Port `G4CMPBogoliubovQP.cc`, `G4CMPSCUtils.cc`, `G4CMPQPDiffusion.cc` ($D(E) = D_0 \sqrt{1 - (\Delta/E)^2}$), `G4CMPSCPairBreakingProcess.cc`, `G4CMPQPRadiatesPhononProcess.cc`, `G4CMPQPRecombinationProcess.cc`, `G4CMPQPLocalTrappingProcess.cc`, and `G4CMPQPBoundaryProcess.cc` into `include/cmpmc/physics/superconductor_3d.hpp` and couple with 3D bulk phonons in `SimulationEngine`.
 
 ### Burst 5: 2D/3D Tetrahedral FEM Mesh Electric Fields, 2D Patterned Electrode Masks & Tier-2/Tier-4 LUT Optimizations (**TODO**)

@@ -292,6 +292,49 @@ static void run_charge_trapping_demo() {
               << "  Trap Impact Ionizations (e->D+)    : " << stats.trap_ionizations << "\n"
               << "  Bulk Trapped Carriers              : " << stats.charges_trapped << "\n"
               << "  Collected Electrode Carriers       : " << stats.charges_collected << "\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 6. All 5 NIEL Partition Models & Exact Fano Binomial Verification (Burst 3)
+// ============================================================================
+static void run_niel_fano_demo() {
+    std::cout << "========================================================================\n";
+    std::cout << " [6] All 5 NIEL Ionization Models & Exact Fano Binomial (Burst 3)\n";
+    std::cout << "========================================================================\n";
+
+    const CrystalConfig si_cfg = materials::Silicon();
+    const CrystalConfig ge_cfg = materials::Germanium();
+    constexpr double E_REC = 250.0 * units::eV;
+
+    const double y_lind   = physics::compute_ionization_yield(physics::NIELModel::Lindhard,   E_REC, si_cfg);
+    const double y_lewin  = physics::compute_ionization_yield(physics::NIELModel::LewinSmith, E_REC, si_cfg);
+    const double y_sarkis = physics::compute_ionization_yield(physics::NIELModel::Sarkis,     E_REC, si_cfg);
+    const double y_impact = physics::compute_ionization_yield(physics::NIELModel::ImpactTUNL, E_REC, si_cfg);
+    const double y_emp_ge = physics::compute_ionization_yield(physics::NIELModel::Empirical,  E_REC, ge_cfg);
+
+    Rng rng(999);
+    double sum = 0.0, sum2 = 0.0;
+    constexpr int N_TRIALS = 20000;
+    constexpr double MEAN_PAIRS = 4.5;
+    constexpr double FANO_SI    = 0.115;
+    for (int i = 0; i < N_TRIALS; ++i) {
+        const double n = static_cast<double>(physics::sample_fano_binomial(MEAN_PAIRS, FANO_SI, rng));
+        sum  += n;
+        sum2 += n * n;
+    }
+    const double mean_meas = sum / N_TRIALS;
+    const double var_meas  = (sum2 / N_TRIALS) - mean_meas * mean_meas;
+    const double fano_meas = var_meas / mean_meas;
+
+    std::cout << std::fixed << std::setprecision(3)
+              << "  250 eV Si Nuclear Recoil Yield (Lindhard)    : " << (100.0 * y_lind)   << "%\n"
+              << "  250 eV Si Nuclear Recoil Yield (Lewin-Smith) : " << (100.0 * y_lewin)  << "%\n"
+              << "  250 eV Si Nuclear Recoil Yield (Sarkis 2023) : " << (100.0 * y_sarkis) << "%\n"
+              << "  250 eV Si Nuclear Recoil Yield (IMPACT@TUNL) : " << (100.0 * y_impact) << "%\n"
+              << "  250 eV Ge Nuclear Recoil Yield (CDMSlite Emp): " << (100.0 * y_emp_ge) << "%\n"
+              << "  Exact Fano Binomial (mean=4.5, F=0.115)      : measured mean=" << mean_meas
+              << ", measured F=" << fano_meas << "\n";
     std::cout << "========================================================================\n";
 }
 
@@ -318,6 +361,7 @@ int main(int argc, char** argv) {
     run_recoil_charge_luke_demo(ge_lattice);
     run_crystal_symmetries_demo();
     run_charge_trapping_demo();
+    run_niel_fano_demo();
 
     return 0;
 }

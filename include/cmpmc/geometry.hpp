@@ -10,13 +10,6 @@
 
 namespace cmpmc {
 
-enum class SurfaceId : uint8_t {
-    TopFace    = 0,
-    BottomFace = 1,
-    SideWall   = 2,
-    Count      = 3
-};
-
 struct BoundaryHit {
     double distance;
     Vec3 inward_normal;

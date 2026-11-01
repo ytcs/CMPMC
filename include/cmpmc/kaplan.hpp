@@ -1,31 +1,12 @@
 #pragma once
 
 #include "cmpmc/core.hpp"
+#include "cmpmc/materials/crystal_config.hpp"
+#include "cmpmc/materials/presets.hpp"
 #include <algorithm>
-#include <array>
 #include <cmath>
 
 namespace cmpmc {
-
-// Fixed-capacity stack buffer to eliminate std::vector heap churn in inner loops
-template <typename T, size_t Capacity = 64>
-struct SmallVec {
-    std::array<T, Capacity> data{};
-    size_t count = 0;
-
-    constexpr void clear() noexcept { count = 0; }
-    constexpr bool empty() const noexcept { return count == 0; }
-    constexpr size_t size() const noexcept { return count; }
-    constexpr void push_back(const T& v) noexcept {
-        if (count < Capacity) data[count++] = v;
-    }
-    constexpr T* begin() noexcept { return data.data(); }
-    constexpr T* end() noexcept { return data.data() + count; }
-    constexpr const T* begin() const noexcept { return data.data(); }
-    constexpr const T* end() const noexcept { return data.data() + count; }
-    constexpr T& operator[](size_t i) noexcept { return data[i]; }
-    constexpr const T& operator[](size_t i) const noexcept { return data[i]; }
-};
 
 // ============================================================================
 // KaplanFilm: Lumped Superconducting Thin-Film Quasiparticle Cascade Model
@@ -44,25 +25,14 @@ struct SmallVec {
 //   Result: Exact endpoint sampling (no BUFF=1000 truncation) and >90%
 //   acceptance on the very first random draw.
 // ============================================================================
-struct KaplanFilm {
-    double film_absorption       = 0.20;               // Sensor area coverage / absorption probability
-    double film_thickness        = 600.0 * units::nm;  // Film thickness (Al default: 600 nm)
-    double v_sound               = 3260.0;             // Speed of sound in film (m/s)
-    double gap_energy            = 173.715 * units::ueV; // Superconducting bandgap Delta (eV)
-    double phonon_lifetime       = 242.0 * units::ps;  // Phonon lifetime tau_0 at 2*Delta
-    double phonon_lifetime_slope = 0.29;               // Slope vs (E/Delta - 2)
-    double low_qp_limit          = 3.0;                // Min QP energy (in Delta) to radiate phonons
-    double high_qp_limit         = 0.0;                // Max QP energy split limit (0 = no split)
-    double subgap_absorption     = 0.10;               // Direct absorption probability below 2*Delta
-    double absorber_gap          = 0.0;                // Subgap TES trap bandgap (e.g. W = 15 ueV)
-    double absorber_eff          = 1.0;                // QP collection efficiency
-    double absorber_eff_slope    = 0.0;                // Efficiency slope vs energy
-    double temperature           = 0.05e-3;            // Film temperature (K)
-    bool keep_all_phonons        = true;
+struct KaplanFilm : public SuperconductorFilmConfig {
+    constexpr KaplanFilm() noexcept = default;
+    constexpr explicit KaplanFilm(const SuperconductorFilmConfig& cfg) noexcept
+        : SuperconductorFilmConfig(cfg) {}
 
     // Standard Aluminum QET sensor parameters from G4CMP examples/phonon
     static constexpr KaplanFilm aluminum_sensor() noexcept {
-        return KaplanFilm{};
+        return KaplanFilm(materials::AluminumFilm());
     }
 
     constexpr bool is_subgap(double energy) const noexcept {
@@ -86,12 +56,9 @@ struct KaplanFilm {
     }
 
     // Main entry point matching G4CMPKaplanQP::AbsorbPhonon
-    // Returns energy deposited into the film/TES (eV), and populates `reflected_energies`
-    // with any phonons re-emitted back into the substrate crystal.
     double absorb_phonon(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
         reflected_energies.clear();
 
-        // 1. Test for direct collection on absorber (TES), then for immediate escape
         if (do_direct_absorption(energy, rng)) {
             return energy;
         }
@@ -153,7 +120,7 @@ struct KaplanFilm {
                 for (double E : phon_energies) {
                     if (is_thermalized(E, rng)) continue;
                     const double frac = ((rng.uniform() < 0.5) ? 0.5 : 1.5) /
-                                        std::cos(rng.uniform() * 1.47); // up to cos(th) = 0.1
+                                        std::cos(rng.uniform() * 1.47);
                     if (rng.uniform() < calc_escape_probability(E, frac)) {
                         reflected_energies.push_back(E);
                     } else if (keep_all_phonons || !is_subgap(E)) {
@@ -168,10 +135,6 @@ struct KaplanFilm {
     }
 
     // Singularity-free Cooper-pair breaking energy sampler
-    // PDF(x) = (x*(E-x) + Delta^2) / sqrt((x^2 - Delta^2) * ((E-x)^2 - Delta^2))
-    // Substituting x = Delta + (E - 2*Delta) * sin^2(pi/2 * u) removes 1/sqrt((x-Delta)*(E-Delta-x))
-    // leaving smooth weight: w(x) = (x*(E-x) + Delta^2) / sqrt((x + Delta) * (E - x + Delta))
-    // whose maximum on [Delta, E - Delta] is at x = E/2 (or endpoints if E < 2*sqrt(3)*Delta).
     inline double sample_qp_energy(double E, Rng& rng) const noexcept {
         const double d = gap_energy;
         const double span = E - 2.0 * d;
@@ -193,9 +156,6 @@ struct KaplanFilm {
     }
 
     // Singularity-free QP-radiated phonon energy sampler
-    // PDF(x) = (E - x)^2 * (x - Delta^2/E) / sqrt(x^2 - Delta^2) for x in [Delta, E]
-    // Substituting x = Delta + (E - Delta) * u^2 cancels 1/sqrt(x - Delta),
-    // leaving smooth weight: w(x) = (E - x)^2 * (x - Delta^2/E) / sqrt(x + Delta)
     inline double sample_phonon_energy(double E, Rng& rng) const noexcept {
         const double d = gap_energy;
         const double span = E - d;
@@ -206,7 +166,6 @@ struct KaplanFilm {
             const double diff = E - x;
             return (diff * diff) * (x - d2_over_E) / std::sqrt(x + d);
         };
-        // Maximum of w(x) on [Delta, E] occurs near x = max(Delta, (E + 3*d2_over_E)/4)
         const double x_peak = std::clamp(0.25 * (E + 3.0 * d2_over_E), d, E);
         const double w_max = std::max(weight(d), weight(x_peak)) * 1.02;
 
@@ -214,7 +173,7 @@ struct KaplanFilm {
             const double u = rng.uniform();
             const double x = d + span * (u * u);
             if (rng.uniform() * w_max <= weight(x)) {
-                return E - x; // Phonon carries E - E'_qp
+                return E - x;
             }
         }
     }

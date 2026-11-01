@@ -6,49 +6,12 @@
 #include "cmpmc/kaplan.hpp"
 #include "cmpmc/lattice.hpp"
 #include "cmpmc/partition.hpp"
+#include "cmpmc/physics/custom_excitation_example.hpp"
 #include <array>
 #include <cstdint>
 #include <vector>
 
 namespace cmpmc {
-
-// ============================================================================
-// PhononTrack & Generic ExcitationTrack
-// Replaces: G4Track + G4DynamicParticle + G4CMPPhononTrackInfo + G4Step
-// ============================================================================
-struct alignas(64) PhononTrack {
-    Vec3 pos;              // 24B: Position in detector frame (m)
-    Vec3 k_dir;            // 24B: Wavevector unit direction
-    Vec3 vg_dir;           // 24B: Group velocity unit direction
-    double energy;         //  8B: Phonon energy (eV)
-    double vg_mag;         //  8B: Group velocity magnitude (m/s)
-    double time;           //  8B: Global track time (s)
-    double weight   = 1.0; //  8B: Statistical weight (for Luke / Partition downsampling)
-    uint32_t bounces= 0;   //  4B: Boundary reflection counter
-    PhononMode mode = PhononMode::L; // 1B: Polarization mode (L, FT, ST)
-};
-
-// Extensible state for future excitation types (BogoliubovQP, Exciton, Magnon, Plasmon)
-struct alignas(64) GenericExcitationTrack {
-    Vec3 pos;
-    Vec3 mom_dir;
-    double energy;
-    double velocity;
-    double time;
-    double weight       = 1.0;
-    ExcitationType type = ExcitationType::BogoliubovQP;
-    uint8_t spin_or_band= 0;
-};
-
-struct SensorHit {
-    Vec3 pos;
-    double time;
-    double edep;             // Weighted energy deposited (eV)
-    double incident_energy;
-    SurfaceId surface_id;
-    ExcitationType excitation = ExcitationType::Phonon;
-    PhononMode mode           = PhononMode::L;
-};
 
 struct SimStats {
     // Phonon statistics
@@ -115,7 +78,6 @@ public:
     SimulationEngine(const CrystalLattice& lattice, const DetectorModel& detector)
         : lattice_(lattice), detector_(detector), charge_phys_(lattice) {}
 
-    // Create a primary phonon track with group velocity initialized from the LUT
     inline PhononTrack make_track(const Vec3& pos, const Vec3& k_dir,
                                   PhononMode mode, double energy_eV,
                                   double time_s = 0.0, double weight = 1.0) const noexcept {
@@ -135,7 +97,7 @@ public:
     }
 
     // ========================================================================
-    // Charge Carrier Transport (Electrons & Holes + Luke Phonon Emission)
+    // 1. Charge Carrier Transport (Electrons & Holes + Luke Phonon Emission)
     // ========================================================================
     void transport_charges(std::vector<ChargeTrack>& charge_stack,
                            std::vector<PhononTrack>& phonon_stack,
@@ -157,21 +119,18 @@ public:
 
                 const Vec3 E_Vm = detector_.e_field.at(trk.pos);
 
-                // Evaluate competing rates: Luke phonon emission + Intervalley scattering
                 const double r_luke = charge_phys_.luke_emission_rate(trk);
                 const double r_iv   = (trk.type == ExcitationType::Electron)
                     ? lattice_.intervalley_rate(trk.ekin, E_Vm)
                     : 0.0;
                 const double r_tot  = r_luke + r_iv;
 
-                // Sample interaction time step dt_phys, capped by max acceleration step (~0.5 um / v_sound)
                 const double dt_max_accel = 100.0 * units::ps;
                 const double dt_phys = (r_tot > 1.0)
                     ? (-std::log(rng.uniform()) / r_tot)
                     : std::numeric_limits<double>::infinity();
                 const double dt = std::min(dt_phys, dt_max_accel);
 
-                // Predict velocity after half-step acceleration for midpoint position update
                 const Vec3 dp_eV = E_Vm * (q_sign * units::c_light * dt);
                 const Vec3 p_mid = trk.p_eV + dp_eV * 0.5;
                 const Vec3 v_mid = (trk.type == ExcitationType::Electron)
@@ -184,7 +143,6 @@ public:
                     const Vec3 v_dir = v_mid / v_mid_mag;
                     const BoundaryHit bhit = detector_.solid.intersect_exit(trk.pos, v_dir);
 
-                    // Check if charge hits crystal boundary / electrode during this step
                     if (bhit.distance <= d_step) {
                         const double dt_bound = bhit.distance / v_mid_mag;
                         trk.pos  += v_dir * bhit.distance;
@@ -194,7 +152,6 @@ public:
                             ? lattice_.map_p_to_ekin_electron(trk.valley, trk.p_eV)
                             : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
-                        // Charge collected at electrode: deposits kinetic energy + 0.5*E_gap recombination energy
                         const double recomb_eV = (trk.ekin + 0.5 * e_gap) * trk.weight;
                         stats.charges_collected++;
                         stats.charge_recomb_edep_eV += recomb_eV;
@@ -212,7 +169,6 @@ public:
                     }
                 }
 
-                // Advance position, time, and momentum in electric field
                 trk.pos  += v_mid * dt;
                 trk.time += dt;
                 trk.p_eV += dp_eV;
@@ -220,7 +176,6 @@ public:
                     ? lattice_.map_p_to_ekin_electron(trk.valley, trk.p_eV)
                     : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
-                // If step was limited by a discrete scattering process, execute it
                 if (dt_phys <= dt_max_accel) {
                     if (r_iv > 0.0 && rng.uniform() * r_tot < r_iv) {
                         charge_phys_.scatter_intervalley(trk, rng);
@@ -246,7 +201,7 @@ public:
     }
 
     // ========================================================================
-    // Phonon Transport (Ballistic Anisotropic Ray-Tracing + Kaplan QP Cascade)
+    // 2. Phonon Transport (Ballistic Anisotropic Ray-Tracing + Kaplan QP Cascade)
     // ========================================================================
     void transport(std::vector<PhononTrack>& stack,
                    std::vector<SensorHit>& hits,
@@ -267,7 +222,6 @@ public:
 
                 stats.total_steps++;
 
-                // 1. Combined bulk interaction rate (1/s) -> 1 logarithm per step
                 const double rate_iso  = lattice_.isotope_rate(trk.energy);
                 const double rate_down = lattice_.downconversion_rate(trk.mode, trk.energy);
                 const double rate_tot  = rate_iso + rate_down;
@@ -276,10 +230,8 @@ public:
                     ? (-std::log(rng.uniform()) * (trk.vg_mag / rate_tot))
                     : std::numeric_limits<double>::infinity();
 
-                // 2. Analytic ray-cylinder exit distance
                 const BoundaryHit bhit = detector_.solid.intersect_exit(trk.pos, trk.vg_dir);
 
-                // 3A. Bulk Interaction wins (Isotope Scatter or Anharmonic Decay)
                 if (d_phys < bhit.distance) {
                     trk.pos  += trk.vg_dir * d_phys;
                     trk.time += d_phys / trk.vg_mag;
@@ -297,14 +249,12 @@ public:
                     continue;
                 }
 
-                // 3B. Boundary Interaction wins
                 trk.pos  += trk.vg_dir * bhit.distance;
                 trk.time += bhit.distance / trk.vg_mag;
                 trk.bounces++;
 
                 const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
 
-                // Check for thin-film sensor interaction (G4CMPPhononElectrode + KaplanQP)
                 if (surf.kaplan_sensor.has_value() && rng.uniform() < surf.prob_abs) {
                     const KaplanFilm& film = *surf.kaplan_sensor;
                     if (rng.uniform() < film.film_absorption) {
@@ -347,7 +297,6 @@ public:
                     }
                 }
 
-                // Surface Reflection (Specular vs. Lambertian Diffuse)
                 if (rng.uniform() > surf.prob_refl) {
                     stats.killed_tracks++;
                     stats.escaped_or_killed_eV += trk.energy * trk.weight;
@@ -374,6 +323,70 @@ public:
                     trk.vg_dir = kin.vg_dir;
                     trk.vg_mag = kin.vg_mag;
                 }
+            }
+        }
+    }
+
+    // ========================================================================
+    // 3. Extensible Custom Excitation Transport (BogoliubovQP, Exciton, Magnon)
+    //    Uses C++20 `physics::ExcitationProcessConcept` for zero-overhead inlining!
+    // ========================================================================
+    template <physics::ExcitationProcessConcept Model>
+    void transport_custom_excitation(const Model& model,
+                                     std::vector<GenericExcitationTrack>& stack,
+                                     std::vector<SensorHit>& hits,
+                                     SimStats& stats,
+                                     Rng& rng) const {
+        while (!stack.empty()) {
+            GenericExcitationTrack trk = stack.back();
+            stack.pop_back();
+
+            for (;;) {
+                if (trk.energy < model.min_energy_eV() || trk.bounces >= detector_.max_bounces) {
+                    stats.killed_tracks++;
+                    stats.escaped_or_killed_eV += trk.energy * trk.weight;
+                    break;
+                }
+
+                stats.total_steps++;
+                const double rate = model.bulk_rate(trk);
+                const double d_phys = (rate > 1e-12 && trk.velocity > 0.0)
+                    ? (-std::log(rng.uniform()) * (trk.velocity / rate))
+                    : std::numeric_limits<double>::infinity();
+
+                const BoundaryHit bhit = detector_.solid.intersect_exit(trk.pos, trk.mom_dir);
+
+                if (d_phys < bhit.distance) {
+                    trk.pos  += trk.mom_dir * d_phys;
+                    trk.time += d_phys / std::max(trk.velocity, 1e-6);
+                    model.perform_bulk_interaction(trk, stack, rng);
+                    continue;
+                }
+
+                trk.pos  += trk.mom_dir * bhit.distance;
+                trk.time += bhit.distance / std::max(trk.velocity, 1e-6);
+                trk.bounces++;
+
+                const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
+                if (rng.uniform() < surf.prob_abs) {
+                    const double weighted_edep = trk.energy * trk.weight;
+                    stats.sensor_hits++;
+                    stats.total_deposited_eV += weighted_edep;
+                    hits.push_back(SensorHit{
+                        .pos             = trk.pos,
+                        .time            = trk.time,
+                        .edep            = weighted_edep,
+                        .incident_energy = trk.energy,
+                        .surface_id      = bhit.surface_id,
+                        .excitation      = trk.type,
+                        .mode            = PhononMode::L
+                    });
+                    break;
+                }
+
+                stats.surface_refls++;
+                trk.pos     += bhit.inward_normal * 1e-11;
+                trk.mom_dir  = rng.lambertian_dir(bhit.inward_normal);
             }
         }
     }

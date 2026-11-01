@@ -2,7 +2,9 @@
 
 **CMPMC** is a fast, standalone C++20 condensed-matter Monte Carlo engine that ports and optimizes the physics of [G4CMP](https://github.com/kelseymh/G4CMP) without any Geant4 or CLHEP dependencies. It is architected from the ground up as a **multi-excitation transport engine** supporting **Phonons**, **Conduction-Band Drift Electrons** (with anisotropic Herring-Vogt valleys), **Valence-Band Drift Holes**, **Superconducting Bogoliubov Quasiparticles**, and extensible collective excitations (**Excitons, Magnons, Plasmons**).
 
-See [`PLAN.md`](PLAN.md) for the full architectural breakdown, G4CMP-to-CMPMC module mapping, mathematical optimizations, and porting roadmap.
+See:
+- **[`PLAN.md`](PLAN.md)**: Architectural breakdown, G4CMP-to-CMPMC module mapping, and the **10,000x Speedup Roadmap** (Octahedral LUTs, SIMD SoA wavefronts, GPU hardware texture/RT cores, and algorithmic physics shortcuts).
+- **[`CONTRIBUTING_PHYSICS.md`](CONTRIBUTING_PHYSICS.md)**: Physicist's cookbook for adding new crystals/films, modifying scattering/decay formulas, or plugging in new excitation species in ~30 lines of C++20.
 
 ## Features in the Prototype
 

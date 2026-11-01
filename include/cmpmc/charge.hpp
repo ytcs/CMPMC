@@ -15,8 +15,6 @@ namespace cmpmc {
 struct UniformElectricField {
     Vec3 field_Vm = {0.0, 0.0, 0.0}; // Electric field E in V/m
 
-    // Construct uniform Z electric field from bias voltage across crystal height H
-    // Positive voltage on TopFace (+H/2) vs BottomFace (-H/2) gives E_z = -V_bias / H
     static constexpr UniformElectricField from_bias(double bias_volts, double thickness_m) noexcept {
         return UniformElectricField{{0.0, 0.0, -bias_volts / thickness_m}};
     }
@@ -25,25 +23,9 @@ struct UniformElectricField {
         return field_Vm;
     }
 
-    // Electrostatic potential V(pos) in Volts relative to z = 0
     constexpr double potential(const Vec3& pos) const noexcept {
         return -field_Vm.dot(pos);
     }
-};
-
-// ============================================================================
-// ChargeTrack: 64-byte Cache-Aligned Electron / Hole State
-// Replaces: G4CMPDriftElectron, G4CMPDriftHole, G4CMPDriftTrackInfo
-// ============================================================================
-struct alignas(64) ChargeTrack {
-    Vec3 pos;                // 24B: Position in detector frame (m)
-    Vec3 p_eV;               // 24B: Transport momentum p*c (eV)
-    double ekin;             //  8B: Kinetic energy (eV)
-    double time;             //  8B: Global time (s)
-    double weight     = 1.0; //  8B: Statistical weight
-    uint16_t valley   = 0;   //  2B: Conduction-band valley index (for Electrons)
-    ExcitationType type = ExcitationType::Electron; // 1B: Electron or Hole
-    bool alive        = true;//  1B: Active status
 };
 
 struct LukePhononEmit {
@@ -63,7 +45,6 @@ public:
     explicit constexpr ChargePhysics(const CrystalLattice& lattice) noexcept
         : lattice_(lattice) {}
 
-    // Create a primary electron or hole at initial kinetic energy `ekin_eV`
     inline ChargeTrack make_charge(ExcitationType type, const Vec3& pos, const Vec3& dir,
                                    double ekin_eV, uint16_t valley_idx, double time_s = 0.0) const noexcept {
         const Vec3 u = dir.unit();
@@ -94,8 +75,9 @@ public:
         return lattice_.map_p_to_vel_hole(trk.p_eV);
     }
 
-    // Compute Neganov-Trofimov-Luke acoustic phonon emission rate (Hz)
-    // Matches G4CMPLukeEmissionRate::Rate & G4CMPProcessUtils::ChargeCarrierTimeStep
+    // Neganov-Trofimov-Luke acoustic phonon emission rate (Hz)
+    // Reference: Cabrera et al., arXiv:1004.1233 (2010)
+    //   Gamma_Luke(k) = (v_sound / (3 * l_0)) * (k_sound / k) * (k / k_sound - 1)^3
     inline double luke_emission_rate(const ChargeTrack& trk) const noexcept {
         const double v_sound = lattice_.config().v_sound;
         double k_mag   = 0.0;
@@ -115,16 +97,14 @@ public:
         }
 
         if (k_mag <= k_sound) return 0.0;
-        const double mach = k_mag / k_sound;
-        const double dm   = mach - 1.0;
+        const double mach  = k_mag / k_sound;
+        const double dm    = mach - 1.0;
         const double tstep = (3.0 * l0) / v_sound;
-        const double tau = tstep * mach / (dm * dm * dm);
+        const double tau   = tstep * mach / (dm * dm * dm);
         return (tau > 0.0) ? (1.0 / tau) : 0.0;
     }
 
     // Sample Neganov-Trofimov-Luke Cherenkov phonon emission and update recoil momentum in-place
-    // Matches G4CMPLukeScattering::PostStepDoIt, eliminating the 1000-trial rejection loop
-    // because cos(theta_ph) = (ks/k) + (1 - ks/k)*(1 - u)^(1/3) is analytically inside the Cherenkov cone!
     inline LukePhononEmit emit_luke_phonon(ChargeTrack& trk, Rng& rng) const noexcept {
         Vec3 k_trk{};
         double k_sound = 0.0;
@@ -150,7 +130,6 @@ public:
         const double sin_th = std::sqrt(std::max(0.0, 1.0 - cos_th * cos_th));
         const double phi    = units::two_pi * rng.uniform();
 
-        // Phonon wavevector magnitude in HV/spherical frame: q = 2 * (k * cos(theta) - k_sound)
         const double q = 2.0 * (k_mag * cos_th - k_sound);
         if (q <= 0.0) return {};
 
@@ -170,12 +149,11 @@ public:
             trk.ekin = lattice_.map_p_to_ekin_hole(trk.p_eV);
             return LukePhononEmit{true, q_vec.unit(), e_ph};
         } else {
-            // Transform phonon wavevector and electron recoil wavevector back from HV spherical to crystal frame
             const double q_sph_mag = q_vec.norm();
             const double e_ph = q_sph_mag * lattice_.config().v_sound * units::hbar_Planck;
             if (e_ph >= trk.ekin || e_ph <= 0.0) return {};
 
-            const Vec3 q_cryst = lattice_.spherical_to_ellipsoidal(trk.valley, q_vec).unit();
+            const Vec3 q_cryst   = lattice_.spherical_to_ellipsoidal(trk.valley, q_vec).unit();
             const Vec3 k_rec_ell = lattice_.spherical_to_ellipsoidal(trk.valley, k_recoil);
             const Vec3 p_rec_dir = lattice_.map_k_to_p_electron(trk.valley, k_rec_ell);
 
@@ -186,17 +164,14 @@ public:
         }
     }
 
-    // Perform intervalley scattering of a conduction-band electron
-    // Matches G4CMPInterValleyScattering::PostStepDoIt
+    // Intervalley scattering of a conduction-band electron
     inline void scatter_intervalley(ChargeTrack& trk, Rng& rng) const noexcept {
         const size_t nv = lattice_.num_valleys();
         if (trk.type != ExcitationType::Electron || nv < 2) return;
 
-        // Wavevector in current valley coordinates
         const Vec3 k_cryst  = lattice_.map_p_to_k_electron(trk.valley, trk.p_eV);
         const Vec3 k_valley = lattice_.rotate_to_valley(trk.valley, k_cryst);
 
-        // Pick a distinct new valley uniformly
         const size_t offset = 1 + static_cast<size_t>(rng.uniform() * (nv - 1));
         const uint16_t new_valley = static_cast<uint16_t>((trk.valley + offset) % nv);
 

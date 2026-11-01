@@ -1,4 +1,5 @@
 #include "cmpmc/engine.hpp"
+#include "cmpmc/gpu/wavefront_pipeline.hpp"
 #include "cmpmc/wavefront_soa.hpp"
 #include <chrono>
 #include <iomanip>
@@ -607,6 +608,47 @@ static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
               << dt_ms << " ms (" << m_steps_s << " M steps/s single-thread!)\n"
               << "  Al QET Sensor Hits       : " << stats.sensor_hits << " hits, Deposited = "
               << stats.total_deposited_eV << " eV / " << stats.total_injected_eV << " eV\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 11. Tier-3 GPU-Ready 4-Stage Wavefront Queue Pipeline (Burst 8)
+// ============================================================================
+static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [11] Tier-3 GPU-Ready 4-Stage Wavefront Queue Pipeline (Burst 8)\n";
+    std::cout << "========================================================================\n";
+
+    DetectorModel det{};
+    gpu::WavefrontPipelineEngine wf_engine(ge_lattice, det);
+    SimulationEngine scalar_engine(ge_lattice, det);
+
+    Rng rng(8008);
+    std::vector<PhononTrack> stack;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    const double e_init = ge_lattice.debye_energy();
+    for (int i = 0; i < 400; ++i) {
+        stack.push_back(scalar_engine.make_track({0.0, 0.0, 0.0}, rng.isotropic_dir(), PhononMode::L, e_init));
+        stats.total_injected_eV += e_init;
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    wf_engine.transport_wavefront(stack, hits, stats, rng);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double dt_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double m_steps_s = (stats.total_steps / 1e6) / std::max(1e-9, dt_ms * 1e-3);
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "  Wavefront Pipeline Steps : " << stats.total_steps << " steps in "
+              << dt_ms << " ms (" << m_steps_s << " M steps/s, zero warp divergence)\n"
+              << "  Stage Counts             : Iso=" << stats.isotope_scatters
+              << ", Decays=" << (stats.decays_L_to_TT + stats.decays_L_to_LT)
+              << ", Refl=" << stats.surface_refls
+              << ", Hits=" << stats.sensor_hits << "\n"
+              << "  Energy Conservation      : Deposited " << stats.total_deposited_eV
+              << " eV / Injected " << stats.total_injected_eV << " eV\n";
     std::cout << "========================================================================\n";
 }
 
@@ -638,6 +680,7 @@ int main(int argc, char** argv) {
     run_mesh_field_and_mask_demo(ge_lattice);
     run_fast_shortcuts_benchmark(ge_lattice);
     run_simd_soa_benchmark(ge_lattice);
+    run_gpu_wavefront_pipeline_benchmark(ge_lattice);
 
     return 0;
 }

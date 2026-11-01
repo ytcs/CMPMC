@@ -187,5 +187,5 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 ### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**COMPLETED**)
 - [x] Implement 16-wide cache-aligned `PhononBatchSoA16` and `WavefrontSoAEngine::transport_soa()` in `include/cmpmc/wavefront_soa.hpp` (vectorized ray-cylinder intersection, free-flight sampling, zero-trig Octahedral LUT lookup, and `KaplanSurrogateLUT`).
 
-### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**NEXT**)
-- [ ] Implement non-divergent 4-stage wavefront queue pipeline (`FreeFlightRayStage`, `IsotopeScatterStage`, `AnharmonicDecayStage`, `SurfaceKaplanStage`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.
+### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**COMPLETED**)
+- [x] Implement non-divergent 4-stage wavefront queue pipeline (`stage1_free_flight_and_raytrace`, `stage2_isotope_scatter`, `stage3_anharmonic_decay`, `stage4_boundary_and_kaplan`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.

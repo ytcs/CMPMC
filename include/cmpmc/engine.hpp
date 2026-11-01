@@ -7,6 +7,7 @@
 #include "cmpmc/lattice.hpp"
 #include "cmpmc/partition.hpp"
 #include "cmpmc/physics/custom_excitation_example.hpp"
+#include "cmpmc/physics/fast_shortcuts.hpp"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -93,6 +94,11 @@ struct DetectorModel {
     uint32_t max_bounces       = 5000;
     double min_phonon_eV       = 10.0 * units::ueV; // Cutoff below 2*Delta_W
     double luke_sample_fraction= 1.0;               // Fraction of Luke phonons tracked (with weight = 1/frac)
+
+    // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
+    physics::JumpToBallisticConfig jump_to_ballistic{};
+    uint32_t russian_roulette_bounces = 0;   // 0 = disabled; e.g. 64 for sparse sensors
+    double russian_roulette_survival  = 0.5; // Survival probability per roulette check
 
     inline Vec3 electric_field_at(const Vec3& pos) const noexcept {
         if (mesh_field_3d.has_value()) return mesh_field_3d->at(pos);
@@ -267,6 +273,118 @@ public:
     }
 
     // ========================================================================
+    // 1b. Macroscopic Chord Stepping for High-Voltage (HV/CDMSlite) Charge +
+    //     Neganov-Trofimov-Luke Transport (50x - 200x Step Reduction)
+    // ========================================================================
+    void transport_charges_fast_chord(std::vector<ChargeTrack>& charge_stack,
+                                      std::vector<PhononTrack>& phonon_stack,
+                                      std::vector<SensorHit>& hits,
+                                      SimStats& stats,
+                                      Rng& rng,
+                                      double max_chord_m = 250.0 * units::um) const {
+        const double e_gap = lattice_.config().bandgap;
+
+        while (!charge_stack.empty()) {
+            ChargeTrack trk = charge_stack.back();
+            charge_stack.pop_back();
+
+            const double q_sign = (trk.type == ExcitationType::Electron) ? -1.0 : +1.0;
+            const double ks     = (trk.type == ExcitationType::Electron)
+                ? lattice_.k_sound_electron()
+                : lattice_.k_sound_hole();
+
+            for (uint32_t step = 0; step < 50'000; ++step) {
+                stats.charge_steps++;
+
+                const Vec3 E_Vm  = detector_.electric_field_at(trk.pos);
+                const double E_mag = E_Vm.norm();
+                if (E_mag < 1e-3) break;
+
+                // Place carrier at steady-state Cherenkov drift momentum along q*E
+                const Vec3 f_dir = (E_Vm * q_sign).unit();
+                const Vec3 k_ss  = (trk.type == ExcitationType::Electron)
+                    ? lattice_.spherical_to_ellipsoidal(trk.valley, f_dir * (2.2 * ks))
+                    : (f_dir * (2.2 * ks));
+                trk.p_eV = k_ss * units::hbarc;
+                trk.ekin = (trk.type == ExcitationType::Electron)
+                    ? lattice_.map_p_to_ekin_electron(trk.valley, trk.p_eV)
+                    : lattice_.map_p_to_ekin_hole(trk.p_eV);
+
+                const Vec3 v_drift   = charge_phys_.velocity(trk);
+                const double v_mag   = v_drift.norm();
+                if (v_mag <= 1e-6) break;
+                const Vec3 v_dir     = v_drift / v_mag;
+
+                const double r_iv    = (trk.type == ExcitationType::Electron)
+                    ? lattice_.intervalley_rate(trk.ekin, E_Vm)
+                    : 0.0;
+                const double r_trap  = physics::charge_trapping_rate(trk.type, v_mag, lattice_.config());
+                const double r_slow  = r_iv + r_trap;
+
+                const double d_slow  = (r_slow > 1.0)
+                    ? (-std::log(rng.uniform()) * (v_mag / r_slow))
+                    : std::numeric_limits<double>::infinity();
+                const BoundaryHit bhit = detector_.solid.intersect_exit(trk.pos, v_dir);
+
+                const double d_chord = std::min({max_chord_m, d_slow, bhit.distance});
+                const Vec3 dr        = v_dir * d_chord;
+                const Vec3 mid_pos   = trk.pos + dr * 0.5;
+                const double dt      = d_chord / v_mag;
+
+                // Electrostatic work converted into Luke phonons along this chord: dW = q * E . dr
+                const double work_eV = std::max(0.0, (E_Vm * q_sign).dot(dr));
+                if (work_eV > 1e-7) {
+                    ChargeTrack sample_trk = trk;
+                    const LukePhononEmit emit = charge_phys_.emit_luke_phonon(sample_trk, rng);
+                    if (emit.emitted && emit.phonon_eV > 1e-9) {
+                        const double n_equiv = work_eV / emit.phonon_eV;
+                        stats.luke_phonons_emitted += static_cast<uint64_t>(n_equiv + 0.5);
+                        stats.total_luke_phonon_eV += work_eV * trk.weight;
+
+                        const PhononMode m = lattice_.sample_dos_mode(rng);
+                        phonon_stack.push_back(make_track(
+                            mid_pos, emit.q_dir, m, emit.phonon_eV,
+                            trk.time + 0.5 * dt, trk.weight * n_equiv
+                        ));
+                    }
+                }
+
+                trk.pos  += dr;
+                trk.time += dt;
+
+                if (bhit.distance <= d_slow && bhit.distance <= max_chord_m + 1e-12) {
+                    // Reached electrode boundary; kinetic energy resets to near-thermal steady state
+                    const double recomb_eV = (0.5 * e_gap) * trk.weight;
+                    stats.charges_collected++;
+                    stats.charge_recomb_edep_eV += recomb_eV;
+                    stats.total_deposited_eV    += recomb_eV;
+                    hits.push_back(SensorHit{
+                        .pos             = trk.pos,
+                        .time            = trk.time,
+                        .edep            = recomb_eV,
+                        .incident_energy = 0.5 * e_gap,
+                        .surface_id      = bhit.surface_id,
+                        .excitation      = trk.type,
+                        .mode            = PhononMode::L
+                    });
+                    break;
+                }
+
+                if (d_slow <= max_chord_m) {
+                    if (rng.uniform() * r_slow < r_trap) {
+                        stats.charges_trapped++;
+                        stats.escaped_or_killed_eV += (0.5 * e_gap) * trk.weight;
+                        break;
+                    } else {
+                        charge_phys_.scatter_intervalley(trk, rng);
+                        stats.intervalley_scatters++;
+                    }
+                }
+            }
+        }
+    }
+
+    // ========================================================================
     // 2. Phonon Transport (Ballistic Anisotropic Ray-Tracing + Kaplan QP Cascade)
     // ========================================================================
     void transport(std::vector<PhononTrack>& stack,
@@ -284,6 +402,26 @@ public:
                     stats.killed_tracks++;
                     stats.escaped_or_killed_eV += trk.energy * trk.weight;
                     break;
+                }
+
+                if (!physics::apply_russian_roulette(trk.weight, trk.bounces,
+                                                     detector_.russian_roulette_bounces,
+                                                     detector_.russian_roulette_survival, rng)) {
+                    stats.killed_tracks++;
+                    break;
+                }
+
+                // Tier-4 Jump-to-Ballistic Downconversion Shortcut (if enabled)
+                if (detector_.jump_to_ballistic.enabled && trk.mode == PhononMode::L) {
+                    const double r_xy = std::hypot(trk.pos.x, trk.pos.y);
+                    const double clearance = std::min(detector_.solid.radius - r_xy,
+                                                      detector_.solid.half_z - std::abs(trk.pos.z));
+                    if (clearance > 0.0) {
+                        physics::jump_to_ballistic_cascade(
+                            trk, clearance, lattice_, detector_.jump_to_ballistic,
+                            stack, stats.decays_L_to_TT, stats.decays_L_to_LT,
+                            stats.isotope_scatters, rng);
+                    }
                 }
 
                 stats.total_steps++;

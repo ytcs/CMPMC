@@ -178,3 +178,14 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Port 2D/3D tetrahedral barycentric FEM electric field interpolator (`G4CMPBiLinearInterp.cc`, `G4CMPTriLinearInterp.cc`, `G4CMPMeshElectricField.cc`) into `include/cmpmc/geometry/mesh_field.hpp` (`TriLinearMesh3D` and `BiLinearMesh2D`).
 - [x] Port patterned 2D sensor/electrode surface masks (`G4CMPVElectrodePattern.cc`) into `include/cmpmc/geometry/surface_mask.hpp` (`ElectrodePatternMask` with SuperCDMS 5-channel QET and rectangular KID/qubit grid presets).
 - [x] Implement `256 x 256` `float4` **Octahedral Equal-Area LUT** (`CrystalLattice::map_k_to_vg_oct`, zero trig) and pre-baked `KaplanSurrogateLUT` (`KaplanSurrogateLUT::absorb_phonon_fast`).
+
+### Burst 6: Tier-4 Algorithmic Physics Shortcuts (Jump-to-Ballistic, HV Chord Luke Stepping & Russian Roulette) (**COMPLETED**)
+- [x] Implement `physics::jump_to_ballistic_cascade()` in `include/cmpmc/physics/fast_shortcuts.hpp` to jump high-frequency diffusive Debye phonons directly to their quasi-ballistic daughter ensemble.
+- [x] Implement `SimulationEngine::transport_charges_fast_chord()` in `include/cmpmc/engine.hpp` for macroscopic chord Neganov-Trofimov-Luke emission at high voltage (50–100 V HV/CDMSlite).
+- [x] Implement unbiased Russian Roulette variance reduction (`physics::apply_russian_roulette()`).
+
+### Burst 7: Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Kernel (**NEXT**)
+- [ ] Implement 16-wide cache-aligned `PhononWavefrontSoA` batch transport kernel in `include/cmpmc/wavefront_soa.hpp` (vectorized ray-cylinder intersection, free-flight sampling, and Octahedral LUT lookup).
+
+### Burst 8: Tier-3 GPU-Ready Wavefront Path-Tracing Queue Architecture (**PLANNED**)
+- [ ] Implement non-divergent 4-stage wavefront queue pipeline (`FreeFlightRayStage`, `IsotopeScatterStage`, `AnharmonicDecayStage`, `SurfaceKaplanStage`) in `include/cmpmc/gpu/wavefront_pipeline.hpp`.

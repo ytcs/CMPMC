@@ -483,6 +483,91 @@ static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
               << ", Ch3=" << ch_hits[3] << ", Ch4(Guard)=" << ch_hits[4] << "\n"
               << "  Octahedral FP32 LUT Err  : max(1 - cos dtheta) = " << std::scientific << max_cos_err
               << std::fixed << ", KaplanSurrogateLUT sample = " << (fast_edep / units::meV) << " meV\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 9. Tier-4 Algorithmic Physics Shortcuts: Jump-to-Ballistic & HV Chord Luke (Burst 6)
+// ============================================================================
+static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [9] Tier-4 Physics Shortcuts: Jump-to-Ballistic & 50V Chord Luke (Burst 6)\n";
+    std::cout << "========================================================================\n";
+
+    // (a) Compare Standard Microscopic Cascade vs Jump-to-Ballistic on 200 Debye Phonons
+    DetectorModel det_std{};
+    det_std.surfaces[0].kaplan_sensor = std::nullopt;
+    det_std.surfaces[0].prob_abs = 1.0;
+    det_std.surfaces[1].kaplan_sensor = std::nullopt;
+    det_std.surfaces[1].prob_abs = 1.0;
+
+    DetectorModel det_jtb = det_std;
+    det_jtb.jump_to_ballistic.enabled = true;
+    det_jtb.jump_to_ballistic.target_freq_GHz = 600.0;
+
+    SimulationEngine eng_std(ge_lattice, det_std);
+    SimulationEngine eng_jtb(ge_lattice, det_jtb);
+
+    const double e_debye = ge_lattice.debye_energy();
+    SimStats st_std{}, st_jtb{};
+    std::vector<PhononTrack> p_std, p_jtb;
+    std::vector<SensorHit> h_std, h_jtb;
+    Rng rng1(9001), rng2(9001);
+
+    for (int i = 0; i < 200; ++i) {
+        const Vec3 dir = rng1.isotropic_dir();
+        p_std.push_back(eng_std.make_track({0.0, 0.0, 0.0}, dir, PhononMode::L, e_debye));
+        p_jtb.push_back(eng_jtb.make_track({0.0, 0.0, 0.0}, dir, PhononMode::L, e_debye));
+        st_std.total_injected_eV += e_debye;
+        st_jtb.total_injected_eV += e_debye;
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    eng_std.transport(p_std, h_std, st_std, rng1);
+    const auto t1 = std::chrono::steady_clock::now();
+    eng_jtb.transport(p_jtb, h_jtb, st_jtb, rng2);
+    const auto t2 = std::chrono::steady_clock::now();
+
+    const double ms_std = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const double ms_jtb = std::chrono::duration<double, std::milli>(t2 - t1).count();
+
+    // (b) High-Voltage 50 V CDMSlite Recoil using Macroscopic Chord Luke Stepping
+    constexpr double HV_BIAS = 50.0 * units::Volt;
+    DetectorModel det_hv = det_jtb;
+    det_hv.e_field = UniformElectricField::from_bias(HV_BIAS, 2.0 * det_hv.solid.half_z);
+    SimulationEngine eng_hv(ge_lattice, det_hv);
+    EnergyPartition part_hv(ge_lattice);
+
+    Rng rng_hv(4242);
+    std::vector<ChargeTrack> ch_hv;
+    std::vector<PhononTrack> ph_hv;
+    std::vector<SensorHit> hits_hv;
+    SimStats st_hv{};
+
+    PartitionOptions popts{};
+    popts.max_sampled_phonons = 200;
+    const auto res_hv = part_hv.partition_deposit(
+        {0.0, 0.0, 0.0}, 0.0, 100.0 * units::eV, /*is_nuclear_recoil=*/true, ch_hv, ph_hv, rng_hv, popts);
+
+    const auto thv0 = std::chrono::steady_clock::now();
+    eng_hv.transport_charges_fast_chord(ch_hv, ph_hv, hits_hv, st_hv, rng_hv, 500.0 * units::um);
+    eng_hv.transport(ph_hv, hits_hv, st_hv, rng_hv);
+    const auto thv1 = std::chrono::steady_clock::now();
+    const double ms_hv = std::chrono::duration<double, std::milli>(thv1 - thv0).count();
+
+    const double expected_hv_eV = 100.0 + res_hv.n_pairs_true * HV_BIAS;
+    const double measured_hv_eV = st_hv.total_deposited_eV + st_hv.escaped_or_killed_eV;
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "  Jump-to-Ballistic Steps  : " << st_jtb.total_steps << " ray steps (" << ms_jtb
+              << " ms) vs " << st_std.total_steps << " std steps (" << ms_std << " ms) -> "
+              << (static_cast<double>(st_std.total_steps) / std::max<uint64_t>(1, st_jtb.total_steps))
+              << "x fewer ray steps\n"
+              << "  50V HV Chord Luke Steps  : " << st_hv.charge_steps << " chord steps for "
+              << (res_hv.n_pairs_true * 2) << " carriers (" << st_hv.luke_phonons_emitted
+              << " equiv Luke phonons)\n"
+              << "  50V HV Total Calorimeter : " << measured_hv_eV << " eV (Expected "
+              << expected_hv_eV << " eV, Runtime: " << ms_hv << " ms)\n";
     std::cout << "========================================================================\n";
 }
 
@@ -512,6 +597,7 @@ int main(int argc, char** argv) {
     run_niel_fano_demo();
     run_superconductor_3d_demo();
     run_mesh_field_and_mask_demo(ge_lattice);
+    run_fast_shortcuts_benchmark(ge_lattice);
 
     return 0;
 }

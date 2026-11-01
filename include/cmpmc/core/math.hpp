@@ -107,6 +107,11 @@ struct SmallVec {
     constexpr void push_back(const T& v) noexcept {
         if (count < Capacity) data[count++] = v;
     }
+    constexpr void pop_back() noexcept {
+        if (count > 0) --count;
+    }
+    constexpr T& back() noexcept { return data[count - 1]; }
+    constexpr const T& back() const noexcept { return data[count - 1]; }
     constexpr T* begin() noexcept { return data.data(); }
     constexpr T* end() noexcept { return data.data() + count; }
     constexpr const T* begin() const noexcept { return data.data(); }

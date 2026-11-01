@@ -6,6 +6,7 @@
 #include "cmpmc/materials/presets.hpp"
 #include "cmpmc/physics/charge_physics.hpp"
 #include "cmpmc/physics/phonon_physics.hpp"
+#include "cmpmc/physics/superconductor_3d.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -32,7 +33,7 @@ public:
     };
 
     explicit CrystalLattice(const Config& cfg)
-        : cfg_(cfg), vg_lut_(3 * N_CTHETA * N_PHI) {
+        : cfg_(cfg), vg_lut_(3 * N_CTHETA * N_PHI), sc_3d_(cfg) {
         build_stiffness_tensor();
         build_group_velocity_lut();
         build_decay_cdf_tables();
@@ -43,6 +44,7 @@ public:
     static Config silicon_config()   { return materials::Silicon(); }
 
     const Config& config() const noexcept { return cfg_; }
+    const physics::Superconductor3D& superconductor() const noexcept { return sc_3d_; }
     double debye_energy() const noexcept { return cfg_.debye_freq * units::h_Planck; }
 
     // Fast Bilinear LUT Query: wavevector k_dir -> (vg_dir, vg_mag)
@@ -198,6 +200,7 @@ private:
     std::vector<Vec3> vg_lut_;
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
+    physics::Superconductor3D sc_3d_;
 
     inline const Vec3& lut_at(int m, int i, int j) const noexcept {
         return vg_lut_[(m * N_CTHETA + i) * N_PHI + j];

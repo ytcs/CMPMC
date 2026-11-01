@@ -35,6 +35,13 @@ struct SimStats {
     double total_luke_phonon_eV   = 0.0;
     double charge_recomb_edep_eV  = 0.0;
 
+    // 3D Superconducting Bogoliubov Quasiparticle statistics
+    uint64_t sc_pair_breakings    = 0;
+    uint64_t qp_diffusion_steps   = 0;
+    uint64_t qp_phonons_radiated  = 0;
+    uint64_t qp_recombinations    = 0;
+    uint64_t qp_local_traps       = 0;
+
     // Energy accounting
     double total_injected_eV      = 0.0;
     double total_deposited_eV     = 0.0;
@@ -58,6 +65,11 @@ struct SimStats {
         charges_collected    += r.charges_collected;
         total_luke_phonon_eV += r.total_luke_phonon_eV;
         charge_recomb_edep_eV+= r.charge_recomb_edep_eV;
+        sc_pair_breakings    += r.sc_pair_breakings;
+        qp_diffusion_steps   += r.qp_diffusion_steps;
+        qp_phonons_radiated  += r.qp_phonons_radiated;
+        qp_recombinations    += r.qp_recombinations;
+        qp_local_traps       += r.qp_local_traps;
         total_injected_eV    += r.total_injected_eV;
         total_deposited_eV   += r.total_deposited_eV;
         escaped_or_killed_eV += r.escaped_or_killed_eV;
@@ -431,6 +443,226 @@ public:
                 stats.surface_refls++;
                 trk.pos     += bhit.inward_normal * 1e-11;
                 trk.mom_dir  = rng.lambertian_dir(bhit.inward_normal);
+            }
+        }
+    }
+
+    // ========================================================================
+    // 4. Full 3D Coupled Superconducting Bogoliubov Quasiparticle + Phonon
+    //    Transport (G4CMPBogoliubovQP, G4CMPSCPairBreakingProcess,
+    //    G4CMPQPRadiatesPhononProcess, G4CMPQPRecombinationProcess,
+    //    G4CMPQPLocalTrappingProcess, G4CMPQPDiffusion)
+    // ========================================================================
+    void transport_superconductor_coupled(std::vector<PhononTrack>& phonon_stack,
+                                          std::vector<GenericExcitationTrack>& qp_stack,
+                                          std::vector<SensorHit>& hits,
+                                          SimStats& stats,
+                                          Rng& rng,
+                                          bool planar_2d_diffusion = false) const {
+        const auto& sc = lattice_.superconductor();
+        if (!sc.is_enabled()) {
+            transport(phonon_stack, hits, stats, rng);
+            return;
+        }
+
+        while (!phonon_stack.empty() || !qp_stack.empty()) {
+            // (A) Transport 3D Bulk Phonons (with Cooper-pair breaking into 2 Bogoliubov QPs)
+            while (!phonon_stack.empty()) {
+                PhononTrack trk = phonon_stack.back();
+                phonon_stack.pop_back();
+
+                for (;;) {
+                    if (trk.energy < detector_.min_phonon_eV || trk.bounces >= detector_.max_bounces) {
+                        stats.killed_tracks++;
+                        stats.escaped_or_killed_eV += trk.energy * trk.weight;
+                        break;
+                    }
+                    stats.total_steps++;
+
+                    const double rate_iso  = lattice_.isotope_rate(trk.energy);
+                    const double rate_poly = lattice_.polycrystal_rate(trk.vg_mag);
+                    const double rate_down = lattice_.downconversion_rate(trk.mode, trk.energy);
+                    const double rate_pb   = sc.phonon_pair_breaking_rate(trk.energy);
+                    const double rate_tot  = rate_iso + rate_poly + rate_down + rate_pb;
+
+                    const double d_phys = (rate_tot > 1e-12)
+                        ? (-std::log(rng.uniform()) * (trk.vg_mag / rate_tot))
+                        : std::numeric_limits<double>::infinity();
+
+                    const BoundaryHit bhit = detector_.solid.intersect_exit(trk.pos, trk.vg_dir);
+
+                    if (d_phys < bhit.distance) {
+                        trk.pos  += trk.vg_dir * d_phys;
+                        trk.time += d_phys / trk.vg_mag;
+
+                        const double u_proc = rng.uniform() * rate_tot;
+                        if (rate_pb > 0.0 && u_proc < rate_pb) {
+                            // Cooper-pair breaking: Phonon (E >= 2*Delta) -> QP1(E1) + QP2(E - E1)
+                            stats.sc_pair_breakings++;
+                            const double e1 = sc.sample_pair_breaking_qp_energy(trk.energy, rng);
+                            const double e2 = trk.energy - e1;
+                            qp_stack.push_back(GenericExcitationTrack{
+                                .pos          = trk.pos,
+                                .mom_dir      = rng.isotropic_dir(),
+                                .energy       = e1,
+                                .velocity     = sc.qp_velocity(e1),
+                                .time         = trk.time,
+                                .weight       = trk.weight,
+                                .bounces      = 0,
+                                .type         = ExcitationType::BogoliubovQP,
+                                .spin_or_band = 0
+                            });
+                            qp_stack.push_back(GenericExcitationTrack{
+                                .pos          = trk.pos,
+                                .mom_dir      = rng.isotropic_dir(),
+                                .energy       = e2,
+                                .velocity     = sc.qp_velocity(e2),
+                                .time         = trk.time,
+                                .weight       = trk.weight,
+                                .bounces      = 0,
+                                .type         = ExcitationType::BogoliubovQP,
+                                .spin_or_band = 0
+                            });
+                            break;
+                        } else if (rate_down > 0.0 && u_proc < rate_pb + rate_down) {
+                            perform_anharmonic_decay(trk, phonon_stack, stats, rng);
+                        } else {
+                            if (u_proc < rate_pb + rate_down + rate_iso) stats.isotope_scatters++;
+                            else stats.polycrystal_scatters++;
+                            trk.mode  = lattice_.sample_dos_mode(rng);
+                            trk.k_dir = rng.isotropic_dir();
+                            const auto kin = lattice_.map_k_to_vg(trk.mode, trk.k_dir);
+                            trk.vg_dir = kin.vg_dir;
+                            trk.vg_mag = kin.vg_mag;
+                        }
+                        continue;
+                    }
+
+                    // Boundary reflection / absorption
+                    trk.pos  += trk.vg_dir * bhit.distance;
+                    trk.time += bhit.distance / trk.vg_mag;
+                    trk.bounces++;
+                    const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
+                    if (rng.uniform() < surf.prob_abs) {
+                        const double weighted_edep = trk.energy * trk.weight;
+                        stats.sensor_hits++;
+                        stats.total_deposited_eV += weighted_edep;
+                        hits.push_back(SensorHit{
+                            .pos             = trk.pos,
+                            .time            = trk.time,
+                            .edep            = weighted_edep,
+                            .incident_energy = trk.energy,
+                            .surface_id      = bhit.surface_id,
+                            .excitation      = ExcitationType::Phonon,
+                            .mode            = trk.mode
+                        });
+                        break;
+                    }
+                    stats.surface_refls++;
+                    trk.pos    += bhit.inward_normal * 1e-11;
+                    trk.k_dir   = sample_inward_wavevector(trk.mode, bhit.inward_normal, rng);
+                    const auto kin = lattice_.map_k_to_vg(trk.mode, trk.k_dir);
+                    trk.vg_dir = kin.vg_dir;
+                    trk.vg_mag = kin.vg_mag;
+                }
+            }
+
+            // (B) Transport 3D Diffusing Bogoliubov Quasiparticles
+            while (!qp_stack.empty()) {
+                GenericExcitationTrack qp = qp_stack.back();
+                qp_stack.pop_back();
+
+                for (uint32_t step = 0; step < 100'000; ++step) {
+                    if (qp.energy < sc.delta_T_eV || qp.bounces >= detector_.max_bounces) {
+                        stats.killed_tracks++;
+                        stats.escaped_or_killed_eV += qp.energy * qp.weight;
+                        break;
+                    }
+                    stats.qp_diffusion_steps++;
+
+                    const double r_rad  = sc.qp_radiates_phonon_rate(qp.energy);
+                    const double r_rec  = sc.qp_recombination_rate(qp.energy);
+                    const double r_trap = sc.qp_local_trapping_rate();
+                    const double r_tot  = r_rad + r_rec + r_trap;
+
+                    const double dt_max  = 1.0 * units::ns;
+                    const double dt_phys = (r_tot > 1e-6)
+                        ? (-std::log(rng.uniform()) / r_tot)
+                        : std::numeric_limits<double>::infinity();
+                    const double dt = std::min(dt_phys, dt_max);
+
+                    // Sample diffusive displacement step (G4CMPQPDiffusion)
+                    const Vec3 dr = sc.sample_diffusive_step(qp.energy, dt, rng, planar_2d_diffusion);
+                    const double dr_mag = dr.norm();
+
+                    if (dr_mag > 1e-15) {
+                        const Vec3 dir = dr / dr_mag;
+                        const BoundaryHit bhit = detector_.solid.intersect_exit(qp.pos, dir);
+                        if (bhit.distance <= dr_mag) {
+                            const double frac = bhit.distance / dr_mag;
+                            qp.pos  += dir * bhit.distance;
+                            qp.time += dt * frac;
+                            qp.bounces++;
+
+                            const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
+                            if (rng.uniform() < surf.prob_abs) {
+                                const double weighted_edep = qp.energy * qp.weight;
+                                stats.sensor_hits++;
+                                stats.total_deposited_eV += weighted_edep;
+                                hits.push_back(SensorHit{
+                                    .pos             = qp.pos,
+                                    .time            = qp.time,
+                                    .edep            = weighted_edep,
+                                    .incident_energy = qp.energy,
+                                    .surface_id      = bhit.surface_id,
+                                    .excitation      = ExcitationType::BogoliubovQP,
+                                    .mode            = PhononMode::L
+                                });
+                                break;
+                            }
+                            stats.surface_refls++;
+                            qp.pos += bhit.inward_normal * 1e-11;
+                            qp.mom_dir = rng.lambertian_dir(bhit.inward_normal);
+                            continue;
+                        }
+                    }
+
+                    qp.pos  += dr;
+                    qp.time += dt;
+
+                    if (dt_phys <= dt_max) {
+                        const double u_proc = rng.uniform() * r_tot;
+                        if (r_trap > 0.0 && u_proc < r_trap) {
+                            // Local vortex/impurity trapping (G4CMPQPLocalTrappingProcess)
+                            stats.qp_local_traps++;
+                            stats.escaped_or_killed_eV += qp.energy * qp.weight;
+                            break;
+                        } else if (r_rec > 0.0 && u_proc < r_trap + r_rec) {
+                            // Recombination with thermal bath QP -> 2*Delta phonon
+                            stats.qp_recombinations++;
+                            const double e_ph = qp.energy + sc.delta_T_eV;
+                            // Account for the extra thermal bath QP energy sc.delta_T_eV injected by bath
+                            stats.total_injected_eV += sc.delta_T_eV * qp.weight;
+                            const PhononMode m = lattice_.sample_dos_mode(rng);
+                            phonon_stack.push_back(make_track(
+                                qp.pos, rng.isotropic_dir(), m, e_ph, qp.time, qp.weight
+                            ));
+                            break;
+                        } else if (r_rad > 0.0) {
+                            // QP radiates a phonon: QP(E) -> QP(E - Omega) + Phonon(Omega)
+                            const double omega = sc.sample_radiated_phonon_energy(qp.energy, rng);
+                            if (omega > 0.0 && qp.energy - omega >= sc.delta_T_eV) {
+                                stats.qp_phonons_radiated++;
+                                qp.energy  -= omega;
+                                qp.velocity = sc.qp_velocity(qp.energy);
+                                const PhononMode m = lattice_.sample_dos_mode(rng);
+                                phonon_stack.push_back(make_track(
+                                    qp.pos, rng.isotropic_dir(), m, omega, qp.time, qp.weight
+                                ));
+                            }
+                        }
+                    }
+                }
             }
         }
     }

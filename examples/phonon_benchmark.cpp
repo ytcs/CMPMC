@@ -335,6 +335,62 @@ static void run_niel_fano_demo() {
               << "  250 eV Ge Nuclear Recoil Yield (CDMSlite Emp): " << (100.0 * y_emp_ge) << "%\n"
               << "  Exact Fano Binomial (mean=4.5, F=0.115)      : measured mean=" << mean_meas
               << ", measured F=" << fano_meas << "\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 7. 3D Superconducting Bogoliubov Quasiparticle Coupled Cascade (Burst 4)
+// ============================================================================
+static void run_superconductor_3d_demo() {
+    std::cout << "========================================================================\n";
+    std::cout << " [7] 3D Superconducting Bogoliubov QP + Phonon Coupled Cascade (Burst 4)\n";
+    std::cout << "========================================================================\n";
+
+    CrystalConfig al_cfg = materials::AluminumCrystal();
+    al_cfg.sc_teff_K     = 0.15;               // 150 mK effective bath temperature
+    al_cfg.sc_trap_tau_s = 25.0 * units::us;   // 25 us vortex/local trapping lifetime
+    CrystalLattice al_sc(al_cfg);
+
+    DetectorModel sc_det{};
+    sc_det.solid.radius = 2.0 * units::mm;
+    sc_det.solid.half_z = 0.5 * units::um;     // 1 um thick 3D superconducting Al film
+    sc_det.surfaces[0].prob_abs = 0.05;        // 5% tunnel junction / collector pad absorption
+    sc_det.surfaces[1].prob_abs = 0.05;
+    sc_det.surfaces[2].prob_abs = 0.0;
+    SimulationEngine sc_engine(al_sc, sc_det);
+
+    Rng rng(777);
+    std::vector<PhononTrack> phonons;
+    std::vector<GenericExcitationTrack> qps;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    // Inject 200 high-energy pair-breaking phonons (E = 10 * Delta_0 = 1.8 meV) inside 3D Al film
+    const double e_init = 10.0 * al_cfg.sc_delta0_eV;
+    for (int i = 0; i < 200; ++i) {
+        phonons.push_back(sc_engine.make_track({0.0, 0.0, 0.0}, rng.isotropic_dir(), PhononMode::L, e_init, 0.0));
+        stats.total_injected_eV += e_init;
+    }
+
+    const auto t0 = std::chrono::steady_clock::now();
+    sc_engine.transport_superconductor_coupled(phonons, qps, hits, stats, rng, /*planar_2d_diffusion=*/false);
+    const auto t1 = std::chrono::steady_clock::now();
+    const double dt_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    const auto& sc = al_sc.superconductor();
+    const double e_cons_diff = std::abs(stats.total_injected_eV - (stats.total_deposited_eV + stats.escaped_or_killed_eV))
+                               / stats.total_injected_eV;
+
+    std::cout << std::fixed << std::setprecision(3)
+              << "  3D Al Superconductor Gap Delta(150 mK) : " << (sc.delta_T_eV / units::ueV) << " ueV (T_c = "
+              << sc.t_crit_K << " K)\n"
+              << "  Cooper-Pair Breakings (Phonon -> 2 QP) : " << stats.sc_pair_breakings << "\n"
+              << "  QP Phonon Radiations  (QP -> QP' + Ph) : " << stats.qp_phonons_radiated << "\n"
+              << "  QP Thermal Recombinations (QP -> 2D Ph): " << stats.qp_recombinations << "\n"
+              << "  QP Local Trapping Events               : " << stats.qp_local_traps << "\n"
+              << "  3D QP Brownian Diffusion Steps         : " << stats.qp_diffusion_steps << "\n"
+              << "  Energy Conservation Relative Diff      : " << std::scientific << e_cons_diff
+              << std::fixed << " (Runtime: " << dt_ms << " ms)\n";
     std::cout << "========================================================================\n";
 }
 
@@ -362,6 +418,7 @@ int main(int argc, char** argv) {
     run_crystal_symmetries_demo();
     run_charge_trapping_demo();
     run_niel_fano_demo();
+    run_superconductor_3d_demo();
 
     return 0;
 }

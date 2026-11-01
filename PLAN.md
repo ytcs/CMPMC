@@ -172,10 +172,10 @@ We organize the complete G4CMP port and optimization roadmap into 5 self-contain
 - [x] Port `G4CMPLindhardNIEL.cc`, `G4CMPLewinSmithNIEL.cc`, `G4CMPSarkisNIEL.cc`, `G4CMPImpactTunlNIEL.cc`, and `G4CMPEmpiricalNIEL.cc` into `include/cmpmc/physics/niel_models.hpp`.
 - [x] Port exact Fano-factor generalized binomial sampling (`G4CMPFanoBinomial.cc`) into `include/cmpmc/physics/niel_models.hpp` and `include/cmpmc/partition.hpp`.
 
-### Burst 4: Full 3D Superconducting Bogoliubov Quasiparticle Transport (**IN PROGRESS**)
-- [ ] Port `G4CMPBogoliubovQP.cc`, `G4CMPSCUtils.cc`, `G4CMPQPDiffusion.cc` ($D(E) = D_0 \sqrt{1 - (\Delta/E)^2}$), `G4CMPSCPairBreakingProcess.cc`, `G4CMPQPRadiatesPhononProcess.cc`, `G4CMPQPRecombinationProcess.cc`, `G4CMPQPLocalTrappingProcess.cc`, and `G4CMPQPBoundaryProcess.cc` into `include/cmpmc/physics/superconductor_3d.hpp` and couple with 3D bulk phonons in `SimulationEngine`.
+### Burst 4: Full 3D Superconducting Bogoliubov Quasiparticle Transport (**COMPLETED**)
+- [x] Port `G4CMPBogoliubovQP.cc`, `G4CMPSCUtils.cc`, `G4CMPQPDiffusion.cc` ($D(E) = D_0 \sqrt{1 - (\Delta/E)^2}$), `G4CMPSCPairBreakingProcess.cc`, `G4CMPQPRadiatesPhononProcess.cc`, `G4CMPQPRecombinationProcess.cc`, `G4CMPQPLocalTrappingProcess.cc`, and `G4CMPQPBoundaryProcess.cc` into `include/cmpmc/physics/superconductor_3d.hpp` (with singularity-free 64-node quadrature LUTs) and couple bidirectionally with 3D bulk phonons in `SimulationEngine::transport_superconductor_coupled()`.
 
-### Burst 5: 2D/3D Tetrahedral FEM Mesh Electric Fields, 2D Patterned Electrode Masks & Tier-2/Tier-4 LUT Optimizations (**TODO**)
+### Burst 5: 2D/3D Tetrahedral FEM Mesh Electric Fields, 2D Patterned Electrode Masks & Tier-2/Tier-4 LUT Optimizations (**IN PROGRESS**)
 - [ ] Port 2D/3D tetrahedral barycentric FEM electric field interpolator (`G4CMPBiLinearInterp.cc`, `G4CMPTriLinearInterp.cc`, `G4CMPMeshElectricField.cc`) into `include/cmpmc/geometry/mesh_field.hpp`.
 - [ ] Port patterned 2D sensor/electrode surface masks (`G4CMPVElectrodePattern.cc`) into `include/cmpmc/geometry/surface_mask.hpp`.
 - [ ] Implement `256 x 256` `float4` **Octahedral Equal-Area LUT** (`oct_encode`, zero trig) and pre-baked `KaplanSurrogateLUT`.

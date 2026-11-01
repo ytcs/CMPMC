@@ -72,7 +72,9 @@ public:
     WavefrontPipelineEngine(const CrystalLattice& lattice, const DetectorModel& detector)
         : lattice_(lattice),
           detector_(detector),
-          kaplan_surrogate_(KaplanFilm::aluminum_sensor()) {}
+          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "gpu::WavefrontPipelineEngine",
+                                               "isotropic decay daughters"),
+                             KaplanFilm::aluminum_sensor())) {}
 
     void transport_wavefront(std::vector<PhononTrack>& initial_tracks,
                              std::vector<SensorHit>& hits,

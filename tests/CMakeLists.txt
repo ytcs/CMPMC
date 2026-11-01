@@ -13,6 +13,7 @@ set(CMPMC_AUDIT_TESTS
     test_headers_compile
     test_pair_breaking
     test_interface_amm
+    test_guards
 )
 foreach(t ${CMPMC_AUDIT_TESTS})
     add_executable(${t} ${t}.cpp)

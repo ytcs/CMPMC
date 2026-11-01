@@ -105,6 +105,10 @@ struct DetectorModel {
 
     // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
     physics::JumpToBallisticConfig jump_to_ballistic{};
+    // Opt-in for modules without a validated reference path (core/validation.hpp). Default off:
+    // jump-to-ballistic, fast-chord HV Luke, the SoA / GPU wavefront engines, the bulk 3D-QP
+    // transport, the IV Matrix rate and the G4CMP demo surface coefficients then throw.
+    bool allow_unvalidated = false;
     uint32_t russian_roulette_bounces = 0;   // 0 = disabled; e.g. 64 for sparse sensors
     double russian_roulette_survival  = 0.5; // Survival probability per roulette check
 
@@ -118,7 +122,12 @@ struct DetectorModel {
 class SimulationEngine {
 public:
     SimulationEngine(const CrystalLattice& lattice, const DetectorModel& detector)
-        : lattice_(lattice), detector_(detector), charge_phys_(lattice) {}
+        : lattice_(lattice), detector_(detector), charge_phys_(lattice) {
+        for (const auto& sp : detector_.surfaces)
+            if (sp.demo_values)
+                require_validated(detector_.allow_unvalidated, "SurfaceProperty::g4cmp_demo_*",
+                                  "G4CMP example reflection/down-conversion polynomials are demonstration values");
+    }
 
     inline PhononTrack make_track(const Vec3& pos, const Vec3& k_dir,
                                   PhononMode mode, double energy_eV,
@@ -146,6 +155,9 @@ public:
                            std::vector<SensorHit>& hits,
                            SimStats& stats,
                            Rng& rng) const {
+        if (lattice_.config().iv_model == IVRateModel::Matrix)
+            require_validated(detector_.allow_unvalidated, "IVRateModel::Matrix",
+                              "Z_f = 2N-1 for every phonon (x4 vs Jacoboni-Reggiani in Si) and Erginsoy impurity term changes valley");
         const double e_gap = lattice_.config().bandgap;
         const double luke_prob = std::clamp(detector_.luke_sample_fraction, 0.0, 1.0);
         const double luke_wt_mult = (luke_prob > 0.0) ? (1.0 / luke_prob) : 0.0;
@@ -302,6 +314,8 @@ public:
                                       SimStats& stats,
                                       Rng& rng,
                                       double max_chord_m = 250.0 * units::um) const {
+        require_validated(detector_.allow_unvalidated, "transport_charges_fast_chord",
+                          "fixed Mach number 2.2 sets the NTL spectrum; collection drops E_kin");
         const double e_gap = lattice_.config().bandgap;
 
         while (!charge_stack.empty()) {
@@ -411,6 +425,9 @@ public:
                    std::vector<SensorHit>& hits,
                    SimStats& stats,
                    Rng& rng) const {
+        if (detector_.jump_to_ballistic.enabled)
+            require_validated(detector_.allow_unvalidated, "jump_to_ballistic",
+                              "fixed-radius shell displacement, rounded N_iso, 48-daughter cap, isotropic k");
         SmallVec<double, 64> kaplan_reflected;
 
         while (!stack.empty()) {
@@ -662,6 +679,8 @@ public:
                                           SimStats& stats,
                                           Rng& rng,
                                           bool planar_2d_diffusion = false) const {
+        require_validated(detector_.allow_unvalidated, "transport_superconductor_coupled (bulk 3D QP)",
+                          "no QP-QP recombination, fixed gap, placeholder qp_velocity 1e6 m/s, LUTs clamped at 60 Delta");
         const auto& sc = lattice_.superconductor();
         if (!sc.is_enabled()) {
             transport(phonon_stack, hits, stats, rng);

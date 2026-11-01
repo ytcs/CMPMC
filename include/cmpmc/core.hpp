@@ -5,3 +5,4 @@
 #include "cmpmc/core/math.hpp"
 #include "cmpmc/core/rng.hpp"
 #include "cmpmc/core/track.hpp"
+#include "cmpmc/core/validation.hpp"

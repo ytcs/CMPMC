@@ -269,6 +269,7 @@ static void run_charge_trapping_demo() {
     CrystalLattice si_lat(si_cfg);
 
     DetectorModel det{};
+    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
     det.e_field = UniformElectricField::from_bias(6.0 * units::Volt, 2.0 * det.solid.half_z);
     det.luke_sample_fraction = 0.0; // Focus on charge transport only
     SimulationEngine engine(si_lat, det);
@@ -354,6 +355,7 @@ static void run_superconductor_3d_demo() {
     CrystalLattice al_sc(al_cfg);
 
     DetectorModel sc_det{};
+    sc_det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
     sc_det.solid.radius = 2.0 * units::mm;
     sc_det.solid.half_z = 0.5 * units::um;     // 1 um thick 3D superconducting Al film
     sc_det.surfaces[0].prob_abs = 0.05;        // 5% tunnel junction / collector pad absorption
@@ -498,6 +500,7 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
 
     // (a) Compare Standard Microscopic Cascade vs Jump-to-Ballistic on 200 Debye Phonons
     DetectorModel det_std{};
+    det_std.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
     det_std.surfaces[0].kaplan_sensor = std::nullopt;
     det_std.surfaces[0].prob_abs = 1.0;
     det_std.surfaces[1].kaplan_sensor = std::nullopt;
@@ -583,6 +586,7 @@ static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
 
     DetectorModel det{};
+    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
     WavefrontSoAEngine soa_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
@@ -620,6 +624,7 @@ static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattic
     std::cout << "========================================================================\n";
 
     DetectorModel det{};
+    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
     gpu::WavefrontPipelineEngine wf_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
@@ -702,7 +707,8 @@ static void run_hit_merging_and_nee_benchmark(const CrystalLattice& ge_lattice) 
         /*phonon_energy_eV=*/1.0 * units::meV,
         /*track_weight=*/1.0,
         flight_dt,
-        /*v_group_ms=*/3500.0
+        /*v_group_ms=*/3500.0,
+        /*allow_unvalidated=*/true
     );
 
     std::cout << std::fixed << std::setprecision(2)

@@ -60,6 +60,9 @@ struct SurfaceProperty {
     // Frequency-independent specular probability used where the polynomials do not
     // apply (G4CMP MaterialPropertiesTable "specProb"; G4CMPSurfaceProperty ctor pSpecProb)
     double spec_prob_const = 0.0;
+    // true for the G4CMP example coefficients ("not well-motivated" demonstration values,
+    // R15 CMPMC-AUD IF-AUD-4); the engine refuses them unless allow_unvalidated is set.
+    bool demo_values = false;
 
     struct ReflectionSplit { double p_spec, p_diff, p_anh; };
 

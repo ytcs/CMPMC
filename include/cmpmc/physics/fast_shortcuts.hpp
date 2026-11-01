@@ -197,7 +197,10 @@ inline double evaluate_sparse_sensor_nee(const Vec3& refl_pos,
                                          double phonon_energy_eV,
                                          double track_weight,
                                          double& out_flight_time_s,
-                                         double v_group_ms) noexcept {
+                                         double v_group_ms,
+                                         bool allow_unvalidated = false) {
+    require_validated(allow_unvalidated, "evaluate_sparse_sensor_nee",
+                      "Lambertian real-space estimator ignores phonon focusing; not wired into the engine");
     const Vec3 disp = pad_center - refl_pos;
     const double d2 = disp.norm2();
     const double area = units::pi * pad_radius_m * pad_radius_m;

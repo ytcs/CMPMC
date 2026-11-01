@@ -96,7 +96,9 @@ public:
         : lattice_(lattice),
           detector_(detector),
           scalar_engine_(lattice, detector),
-          kaplan_surrogate_(KaplanFilm::aluminum_sensor()) {}
+          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "WavefrontSoAEngine",
+                                               "L->TT only, isotropic daughters, diffuse-only walls, first re-emitted phonon only"),
+                             KaplanFilm::aluminum_sensor())) {}
 
     // Transport phonon stack using 16-wide SoA SIMD batches when queue >= 16
     void transport_soa(std::vector<PhononTrack>& stack,

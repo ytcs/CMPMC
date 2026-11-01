@@ -223,6 +223,15 @@ struct CrystalConfig {
 // SuperconductorFilmConfig: Thin-Film Quasiparticle Cascade Parameters
 // Reference: S.B. Kaplan et al., Phys. Rev. B 14 (1976)
 // ============================================================================
+// Film phonon-loss model of the Kaplan cascade (KaplanFilm):
+//   G4CMPMeanFreePath:     G4CMP law, P_esc = exp(-path/lambda), lambda = v_s tau0/(1 + slope (Omega/D - 2))
+//                          (2302.05998 Eqs. (17)-(18) [FT]); legacy default.
+//   KaplanRateCompetition: a film phonon of energy Omega >= 2D breaks a pair with probability
+//                          1/(1 + tau_pb(Omega)/tau_l), otherwise it is lost to the substrate, with the exact
+//                          T = 0 Kaplan rate 1/tau_pb(Omega) = I(Omega)/(pi D tau0) and the loss time tau_l
+//                          (1401.1937 Eqs. (2)-(5) [FT]: tau_l/tau_0^phi is the film-loss parameter).
+enum class FilmLossModel : uint8_t { G4CMPMeanFreePath = 0, KaplanRateCompetition = 1 };
+
 struct SuperconductorFilmConfig {
     double film_absorption       = 0.20;                 // Geometric sensor coverage / absorption prob
     double film_thickness        = 600.0 * units::nm;    // Film thickness d
@@ -238,6 +247,8 @@ struct SuperconductorFilmConfig {
     double absorber_eff_slope    = 0.0;                  // Efficiency slope vs energy
     double temperature           = 0.05e-3;              // Film operating temperature (K)
     bool keep_all_phonons        = true;
+    FilmLossModel loss_model     = FilmLossModel::G4CMPMeanFreePath;
+    double phonon_loss_time      = 0.0;                  // tau_l [s] for KaplanRateCompetition (<= 0: no loss)
 };
 
 } // namespace cmpmc

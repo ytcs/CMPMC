@@ -11,6 +11,7 @@ set(CMPMC_AUDIT_TESTS
     test_kaplan
     test_surface
     test_headers_compile
+    test_pair_breaking
 )
 foreach(t ${CMPMC_AUDIT_TESTS})
     add_executable(${t} ${t}.cpp)

@@ -58,13 +58,66 @@ struct KaplanFilm : public SuperconductorFilmConfig {
     }
 
     // Main entry point matching G4CMPKaplanQP::AbsorbPhonon
-    double absorb_phonon(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
-        reflected_energies.clear();
+    // ------------------------------------------------------------------------
+    // Exact T = 0 Kaplan pair-breaking rate (Kaplan PRB 14, 4854 (1976), as implemented in
+    // G4CMPSCPairBreakingRate and quoted by 1401.1937 via tau_0^phi):
+    //   1/tau_pb(Omega) = I(Omega) / (pi D tau0),
+    //   I(Omega) = Int_D^{Omega-D} dE [E(Omega-E) + D^2] / sqrt((E^2-D^2)((Omega-E)^2-D^2)),
+    // so 1/tau_pb(2D) = 1/tau0 exactly. With E = D + (s/2)(1 - cos t), s = Omega - 2D, the
+    // inverse square roots cancel and the midpoint rule in t (Gauss-Chebyshev) converges
+    // exponentially: I = Int_0^pi dt [E(Omega-E) + D^2]/sqrt((E+D)(Omega-E+D)).
+    // ------------------------------------------------------------------------
+    inline double kaplan_pb_integral(double omega) const noexcept {
+        const double d = gap_energy;
+        if (omega < 2.0 * d) return 0.0;
+        const double s = omega - 2.0 * d;
+        constexpr int NQ = 48;
+        double acc = 0.0;
+        for (int i = 0; i < NQ; ++i) {
+            const double t = units::pi * (i + 0.5) / NQ;
+            const double E = d + 0.5 * s * (1.0 - std::cos(t));
+            acc += (E * (omega - E) + d * d) / std::sqrt((E + d) * (omega - E + d));
+        }
+        return acc * units::pi / NQ;
+    }
+    inline double kaplan_pair_breaking_rate(double omega) const noexcept {
+        if (gap_energy <= 0.0 || phonon_lifetime <= 0.0 || omega < 2.0 * gap_energy) return 0.0;
+        return kaplan_pb_integral(omega) / (units::pi * gap_energy * phonon_lifetime);
+    }
+    // Film-loss time from geometry: mean escape path 4d (2302.05998 Eq. (17) [FT]: 2 x 2d,
+    // traversal and angle average), tau_l = 4 d / (eta_t v_s) with interface transmission eta_t.
+    static inline double loss_time_from_geometry(double d_film, double v_s, double eta_t) noexcept {
+        return (eta_t > 0.0 && v_s > 0.0) ? 4.0 * d_film / (eta_t * v_s) : 0.0;
+    }
+    // Probability that a film phonon of energy E (>= 2D) escapes before it breaks a pair.
+    inline double loss_probability(double energy, double thickness_frac) const noexcept {
+        if (loss_model == FilmLossModel::KaplanRateCompetition) {
+            if (phonon_loss_time <= 0.0) return 0.0;
+            const double g = kaplan_pair_breaking_rate(energy);
+            if (g <= 0.0) return 1.0;
+            return 1.0 / (1.0 + g * phonon_loss_time);   // = tau_pb / (tau_pb + tau_l)
+        }
+        return calc_escape_probability(energy, thickness_frac);
+    }
 
-        if (do_direct_absorption(energy, rng)) {
+    // Seed of the first Cooper-pair split: a phonon entering the film (case I coherence
+    // factor 1 + D^2/E1E2) or a photon absorbed in it (case II, 1 - D^2/E1E2; 1401.1937
+    // Eq. (1) [FT]; WP5-v4 Sec. 5). A photon seed skips the entry-escape step.
+    enum class Seed : uint8_t { Phonon, Photon };
+
+    double absorb_phonon(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
+        return absorb_quantum(energy, reflected_energies, rng, Seed::Phonon);
+    }
+
+    double absorb_quantum(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng,
+                          Seed seed) const noexcept {
+        reflected_energies.clear();
+        const bool photon = (seed == Seed::Photon);
+
+        if (!photon && do_direct_absorption(energy, rng)) {
             return energy;
         }
-        if (is_subgap(energy) || rng.uniform() <= calc_escape_probability(energy, 4.0)) {
+        if (is_subgap(energy) || (!photon && rng.uniform() <= loss_probability(energy, 4.0))) {
             reflected_energies.push_back(energy);
             return 0.0;
         }
@@ -80,8 +133,16 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         SmallVec<double, 64> next_qp;
 
         const double init_e = energy / n_pairs;
-        for (int i = 0; i < n_pairs; ++i) {
-            phon_energies.push_back(init_e);
+        if (photon) {
+            for (int i = 0; i < n_pairs; ++i) {
+                const double qpE = sample_qp_energy_case2(init_e, rng);
+                edep += calc_qp_absorption(qpE, phon_energies, qp_energies, rng);
+                edep += calc_qp_absorption(init_e - qpE, phon_energies, qp_energies, rng);
+            }
+        } else {
+            for (int i = 0; i < n_pairs; ++i) {
+                phon_energies.push_back(init_e);
+            }
         }
 
         while (!qp_energies.empty() || !phon_energies.empty()) {
@@ -121,6 +182,16 @@ struct KaplanFilm : public SuperconductorFilmConfig {
                 next_phon.clear();
                 for (double E : phon_energies) {
                     if (is_thermalized(E, rng)) continue;
+                    if (loss_model == FilmLossModel::KaplanRateCompetition) {
+                        // sub-gap phonons cannot break pairs and leave the film; the others
+                        // compete pair breaking (1/tau_pb) against loss (1/tau_l)
+                        if (is_subgap(E) || rng.uniform() < loss_probability(E, 1.0)) {
+                            reflected_energies.push_back(E);
+                        } else {
+                            next_phon.push_back(E);
+                        }
+                        continue;
+                    }
                     const double frac = ((rng.uniform() < 0.5) ? 0.5 : 1.5) /
                                         std::cos(rng.uniform() * 1.47);
                     if (rng.uniform() < calc_escape_probability(E, frac)) {
@@ -155,6 +226,45 @@ struct KaplanFilm : public SuperconductorFilmConfig {
                 return x;
             }
         }
+    }
+
+    // Case-II (photon) split: weight [x(E-x) - D^2]/sqrt((x^2-D^2)((E-x)^2-D^2)) (1401.1937 Eq. (1) [FT])
+    inline double sample_qp_energy_case2(double E, Rng& rng) const noexcept {
+        const double d = gap_energy;
+        const double span = E - 2.0 * d;
+        if (span <= 1e-16) return 0.5 * E;
+        auto weight = [E, d](double x) noexcept {
+            return std::max(0.0, x * (E - x) - d * d) / std::sqrt((x + d) * (E - x + d));
+        };
+        const double w_max = std::max(weight(d), weight(0.5 * E)) * 1.0001;
+        for (;;) {
+            const double u = rng.uniform();
+            const double s = std::sin(units::half_pi * u);
+            const double x = d + span * (s * s);
+            if (rng.uniform() * w_max <= weight(x)) return x;
+        }
+    }
+
+    // Pair-breaking efficiency and QP Fano factor of one absorbed quantum (WP5-v4 (W13)):
+    //   eta_pb = D <N_qp>/Omega,  F_qp = Var(N_qp)/<N_qp>  (E_sig = D N_qp; requires
+    //   subgap_absorption = 0 and absorber_eff = 1 so that the cascade's edep = D N_qp).
+    struct PairBreakingResult { double eta = 0, eta_err = 0, F_qp = 0; };
+    inline PairBreakingResult pair_breaking_efficiency(double omega, int n_events, Rng& rng,
+                                                       Seed seed = Seed::Phonon) const noexcept {
+        KaplanFilm f = *this;
+        f.subgap_absorption = 0.0; f.absorber_eff = 1.0; f.absorber_eff_slope = 0.0; f.temperature = 0.0;
+        double s1 = 0.0, s2 = 0.0;
+        SmallVec<double, 64> refl;
+        for (int i = 0; i < n_events; ++i) {
+            const double nqp = f.absorb_quantum(omega, refl, rng, seed) / gap_energy;
+            s1 += nqp; s2 += nqp * nqp;
+        }
+        PairBreakingResult r;
+        const double m = s1 / n_events, var = std::max(0.0, s2 / n_events - m * m);
+        r.eta = m * gap_energy / omega;
+        r.eta_err = std::sqrt(var / n_events) * gap_energy / omega;
+        r.F_qp = (m > 0.0) ? var / m : 0.0;
+        return r;
     }
 
     // Singularity-free QP-radiated phonon energy sampler

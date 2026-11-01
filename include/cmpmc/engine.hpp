@@ -89,9 +89,9 @@ struct DetectorModel {
     std::optional<geometry::TriLinearMesh3D> mesh_field_3d = std::nullopt;
     std::optional<geometry::BiLinearMesh2D>  mesh_field_2d = std::nullopt;
     std::array<SurfaceProperty, static_cast<size_t>(SurfaceId::Count)> surfaces{
-        SurfaceProperty::g4cmp_al_sensor_surface(), // TopFace
-        SurfaceProperty::g4cmp_al_sensor_surface(), // BottomFace
-        SurfaceProperty::g4cmp_bare_wall_surface()  // SideWall
+        SurfaceProperty::diffuse_al_sensor_surface(), // TopFace
+        SurfaceProperty::diffuse_al_sensor_surface(), // BottomFace
+        SurfaceProperty::diffuse_bare_surface()       // SideWall
     };
     uint32_t max_bounces       = 5000;
     double min_phonon_eV       = 10.0 * units::ueV; // Cutoff below 2*Delta_W

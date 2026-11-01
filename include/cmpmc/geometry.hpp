@@ -92,22 +92,40 @@ struct SurfaceProperty {
         return reflection_split(energy_eV).p_spec;
     }
 
-    // Standard G4CMP examples/phonon Top/Bottom Aluminum sensor surface
-    static SurfaceProperty g4cmp_al_sensor_surface() {
-        SurfaceProperty s;
+    // ---- Campaign defaults (no demo constants) ----------------------------------------------
+    // Fully diffuse (Lambertian) reflection and no surface down-conversion: "Generally diffusive
+    // scattering has been found to be a good model for phonon-surface reflections" (Leman
+    // 1109.1193 Sec. IV.G [FT]). Surface down-conversion has no sourced coefficient (R15
+    // CMPMC-AUD IF-AUD-4), so p_anh = 0; a campaign run that needs it, or a specular fraction,
+    // must supply sourced spec/diff/anh coefficients (and amm_interface for film entry).
+    static SurfaceProperty diffuse_al_sensor_surface() {
+        SurfaceProperty s = diffuse_bare_surface();
         s.prob_abs      = 1.0;
-        s.prob_refl     = 1.0;
-        s.anh_cutoff    = 520.0;
-        s.refl_cutoff   = 350.0;
-        s.spec_coeffs   = {0.928, -2.03e-4, -3.21e-6, 3.1e-9, 2.9e-13};
-        s.diff_coeffs   = {5.88e-2, 7.83e-4, -2.47e-6, 1.71e-8, -2.98e-11};
-        s.anh_coeffs    = {0.0, 0.0, 0.0, 0.0, 0.0, 1.51e-14};
         s.kaplan_sensor = KaplanFilm::aluminum_sensor();
         return s;
     }
+    static SurfaceProperty diffuse_bare_surface() {
+        SurfaceProperty s;
+        s.prob_abs    = 0.0;
+        s.prob_refl   = 1.0;
+        s.spec_coeffs = {0.0};
+        s.diff_coeffs = {1.0};
+        s.anh_coeffs  = {};
+        s.spec_prob_const = 0.0;
+        s.kaplan_sensor = std::nullopt;
+        return s;
+    }
 
-    // Standard G4CMP examples/phonon bare crystal sidewall surface
-    static SurfaceProperty g4cmp_bare_wall_surface() {
+    // ---- G4CMP examples/phonon DEMONSTRATION values (guarded: demo_values = true) ------------
+    // G4CMP's own documentation calls these polynomials "not well-motivated"; they reproduce the
+    // G4CMP example (R15 CMPMC-AUD T9) and must not feed a campaign number.
+    static SurfaceProperty g4cmp_demo_al_sensor_surface() {
+        SurfaceProperty s = g4cmp_demo_bare_wall_surface();
+        s.prob_abs      = 1.0;
+        s.kaplan_sensor = KaplanFilm::aluminum_sensor();
+        return s;
+    }
+    static SurfaceProperty g4cmp_demo_bare_wall_surface() {
         SurfaceProperty s;
         s.prob_abs      = 0.0;
         s.prob_refl     = 1.0;
@@ -117,6 +135,7 @@ struct SurfaceProperty {
         s.diff_coeffs   = {5.88e-2, 7.83e-4, -2.47e-6, 1.71e-8, -2.98e-11};
         s.anh_coeffs    = {0.0, 0.0, 0.0, 0.0, 0.0, 1.51e-14};
         s.kaplan_sensor = std::nullopt;
+        s.demo_values   = true;
         return s;
     }
 };

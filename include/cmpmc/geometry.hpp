@@ -4,6 +4,7 @@
 #include "cmpmc/geometry/mesh_field.hpp"
 #include "cmpmc/geometry/surface_mask.hpp"
 #include "cmpmc/kaplan.hpp"
+#include "cmpmc/physics/interface_transmission.hpp"
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -40,6 +41,10 @@ struct SurfaceProperty {
     std::vector<double> anh_coeffs  = {0.0};
 
     std::optional<KaplanFilm> kaplan_sensor = std::nullopt;
+    // Mode- and angle-resolved substrate -> film transmission (isotropic AMM). When set, a phonon
+    // reaching an active pad enters the film with probability t_AMM(mode, cos theta_k), which
+    // replaces KaplanFilm::film_absorption (campaign WP8-R Sec. 3.2; IF-AUD-4).
+    std::optional<physics::IsotropicAMMInterface> amm_interface = std::nullopt;
     std::optional<geometry::ElectrodePatternMask> electrode_mask = std::nullopt;
 
     // Evaluate polynomial c[0] + c[1]*f + c[2]*f^2 + ... via Horner's rule

@@ -493,7 +493,11 @@ public:
 
                 if (hit_active_pad && surf.kaplan_sensor.has_value() && rng.uniform() < surf.prob_abs) {
                     const KaplanFilm& film = *surf.kaplan_sensor;
-                    if (rng.uniform() < film.film_absorption) {
+                    const double p_enter = surf.amm_interface.has_value()
+                        ? surf.amm_interface->transmission(trk.mode == PhononMode::L,
+                                                           trk.k_dir.dot(bhit.inward_normal))
+                        : film.film_absorption;
+                    if (rng.uniform() < p_enter) {
                         const double edep = film.absorb_phonon(trk.energy, kaplan_reflected, rng);
                         if (edep > 0.0) {
                             const double weighted_edep = edep * trk.weight;

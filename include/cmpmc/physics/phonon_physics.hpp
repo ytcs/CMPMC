@@ -93,59 +93,41 @@ inline double decay_angle_TT(double x, double v_L, double v_T) noexcept {
     return std::acos(std::clamp(cos_th, -1.0, 1.0));
 }
 
-// Unnormalized energy partition PDF for L -> L' + T (G4CMP FV4)
-// Valid on x in [(m - 1)/(m + 1), 1]
+// Unnormalized energy partition PDF for L -> L' + T, x = E_L'/E_L, m = v_L/v_T:
+//   P(x) ~ (1/x^2) (1 - x^2)^2 [(1 + x)^2 - m^2 (1 - x)^2] [1 + x^2 - m^2 (1 - x)^2]^2
+// on (m - 1)/(m + 1) < x < 1 (Leman, arXiv:1109.1193 Eq. (9), quoting Tamura PRB 31,
+// 2574 (1985); identical to G4CMPAnharmonicDecay::GetLTDecayProb).
 inline double tamura_lt_pdf(double x, const CrystalConfig& cfg) noexcept {
     const double m = cfg.v_sound / cfg.v_trans;
     const double xmin = (m - 1.0) / (m + 1.0);
     if (x <= xmin || x >= 1.0) return 0.0;
-
-    const double s = (1.0 + (x * x) * (1.0 - m * m) + 2.0 * x * m * m - m * m) / (2.0 * x);
-    if (std::abs(s) >= 1.0) return 0.0;
-    const double thL = std::acos(s);
-    const double thT = decay_angle_T_from_LT(x, cfg.v_sound, cfg.v_trans);
-
-    const double ca = cfg.beta + cfg.lambda + (1.0 - m * m) * (cfg.gamma + cfg.mu);
-    const double cb = cfg.beta + cfg.lambda + 2.0 * m * m * (cfg.gamma + cfg.mu);
-    const double cc = cfg.beta + cfg.lambda;
-    const double cd = cfg.gamma + cfg.lambda - m * m * (cfg.gamma + cfg.mu);
-
-    const double u = (ca * x * x + cb * x * (1.0 - x) + cc * (1.0 - x) * (1.0 - x) +
-                      cd * (1.0 - x * x - m * m * (1.0 - x) * (1.0 - x)) * std::cos(thL) * std::cos(thL - thT))
-                     * std::sin(thL - thT);
-    return u * u * (x / (1.0 - x));
+    const double a = 1.0 - x * x;
+    const double b = (1.0 + x) * (1.0 + x) - m * m * (1.0 - x) * (1.0 - x);
+    const double c = 1.0 + x * x - m * m * (1.0 - x) * (1.0 - x);
+    return (a * a / (x * x)) * b * c * c;
 }
 
-// Unnormalized energy partition PDF for L -> T + T (G4CMP FTV5)
-// Valid on x in [(1 - 1/m)/2, (1 + 1/m)/2]
+// Unnormalized energy partition PDF for L -> T + T in the energy fraction x = E_T1/E_L,
+// on (1 - 1/m)/2 < x < (1 + 1/m)/2. Leman, arXiv:1109.1193 Eq. (12) is written in
+// X = m x, (m - 1)/2 < X < (m + 1)/2 (the Jacobian dX/dx = m is constant):
+//   P ~ [A + B m X - B X^2]^2 + [C X (m - X) - D/(m - X) (X - m - (1 - m^2)/(4X))]^2,
+//   A = (1 - m^2)[beta + lambda + (1 + m^2)(gamma + mu)]/2, B = beta + lambda + 2 m^2 (gamma + mu),
+//   C = beta + lambda + 2 (gamma + mu), D = (1 - m^2)(2 beta + 4 gamma + lambda + 3 mu)
+// (identical to G4CMPAnharmonicDecay::GetTTDecayProb(d, x*d)); symmetric under x -> 1 - x.
 inline double tamura_tt_pdf(double x, const CrystalConfig& cfg) noexcept {
     const double m = cfg.v_sound / cfg.v_trans;
     const double xmin = 0.5 * (1.0 - 1.0 / m);
     const double xmax = 0.5 * (1.0 + 1.0 / m);
     if (x <= xmin || x >= xmax) return 0.0;
-
-    const double d = (1.0 + x * x - (1.0 - x) * (1.0 - x) - 1.0 / (m * m)) / (2.0 * x / m);
-    if (std::abs(d) >= 1.0) return 0.0;
-
-    const double g    = cfg.gamma;
-    const double l    = cfg.lambda;
-    const double mu   = cfg.mu;
-    const double d2   = d * d;
-    const double s2   = 1.0 - d2;
-    const double s    = std::sqrt(s2);
-    const double s2th = 2.0 * s * d;
-    const double c2th = d2 - s2;
-
-    const double a = 0.5 * (1.0 - m * m) * (g + mu) * d * (s2th - s);
-    const double b = ((g + l) * d + m * (g + mu) * (c2th - d2));
-    const double c = m * m * (g + mu) * d * s * c2th + 0.5 * m * (g + l) * (2.0 * d2 * s - s2th);
-
-    const double term1 = (a + b * x + c * x * x);
-    const double term2 = 0.25 * (g + l - m * m * (g + mu)) * s2th +
-                         m * (g + l - (g + mu)) * s * x -
-                         m * m * (g + mu) * s * c2th * x * x;
-
-    return (term1 * term1 + term2 * term2) * x * (1.0 - x);
+    const double be = cfg.beta / 1e11, ga = cfg.gamma / 1e11, la = cfg.lambda / 1e11, mu = cfg.mu / 1e11;
+    const double A = 0.5 * (1.0 - m * m) * (be + la + (1.0 + m * m) * (ga + mu));
+    const double B = be + la + 2.0 * m * m * (ga + mu);
+    const double C = be + la + 2.0 * (ga + mu);
+    const double D = (1.0 - m * m) * (2.0 * be + 4.0 * ga + la + 3.0 * mu);
+    const double X = m * x;
+    const double t1 = A + B * m * X - B * X * X;
+    const double t2 = C * X * (m - X) - D / (m - X) * (X - m - (1.0 - m * m) / (4.0 * X));
+    return t1 * t1 + t2 * t2;
 }
 
 // --- 4. Exact Christoffel Acoustic Wave Solver ---

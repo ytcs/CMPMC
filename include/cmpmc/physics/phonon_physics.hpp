@@ -82,10 +82,14 @@ inline double decay_angle_T_from_LT(double x, double v_L, double v_T) noexcept {
     return std::acos(std::clamp(cos_th, -1.0, 1.0));
 }
 
-// Opening angle theta_T of outgoing T phonon with energy fraction x in L -> T + T decay
+// Opening angle theta_T of outgoing T phonon with energy fraction x in L -> T + T decay.
+// Momentum closure k_L = k_T1 + k_T2 with k_L = E/v_L, k_T1 = xE/v_T, k_T2 = (1-x)E/v_T gives
+//   cos(theta_T1) = (1 - m^2 (1-x)^2 + m^2 x^2) / (2 m x)
+// (Leman, arXiv:1109.1193 Eq. (13); G4CMPAnharmonicDecay::MakeTTDeviation). The second
+// daughter uses x -> 1 - x (Leman Eq. (14)).
 inline double decay_angle_TT(double x, double v_L, double v_T) noexcept {
     const double m = v_L / v_T;
-    const double cos_th = (1.0 + x * x - (1.0 - x) * (1.0 - x) - 1.0 / (m * m)) / (2.0 * x / m);
+    const double cos_th = (1.0 - m * m * (1.0 - x) * (1.0 - x) + m * m * x * x) / (2.0 * m * x);
     return std::acos(std::clamp(cos_th, -1.0, 1.0));
 }
 

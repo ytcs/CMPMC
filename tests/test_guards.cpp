@@ -27,7 +27,7 @@ int main() {
             DetectorModel d = det; d.jump_to_ballistic.enabled = true;
             SimulationEngine e(ge, d); std::vector<PhononTrack> st{e.make_track({0, 0, 0}, {0, 0, 1}, PhononMode::L, 1e-3)};
             std::vector<SensorHit> h; SimStats S; e.transport(st, h, S, rng); });
-        expect("transport_charges_fast_chord" + sfx, !allow, [&] {
+        expect("transport_charges_fast_chord (now Leman, validated)" + sfx, false, [&] {
             SimulationEngine e(ge, det); std::vector<ChargeTrack> c; std::vector<PhononTrack> p;
             std::vector<SensorHit> h; SimStats S; e.transport_charges_fast_chord(c, p, h, S, rng); });
         expect("transport_superconductor_coupled" + sfx, !allow, [&] {

@@ -5,7 +5,8 @@
 //  For e-/h+ in Ge and Si at 1, 10, 100 V/cm over 1 mm:
 //  (a) per-carrier energy closure (campaign WP7-E-v3 (E11)): sum E_Luke + dE_kin = e E . dr, <= 1e-3;
 //  (b) NTL phonon mean energy <E_Luke> and phonons per carrier vs the reference, 3%;
-//  (c) cost: charge steps per carrier relative to P5 (reported; check: fewer steps than P5).
+//  (c) cost: charge steps per carrier relative to P5 (reported; check: fewer steps than P5);
+//  (d) transport_charges_fast_chord now runs the Leman path (identical output for one seed).
 #include "audit_common.hpp"
 #include "cmpmc/engine.hpp"
 #include <string>
@@ -63,5 +64,26 @@ int main() {
                 audit::info("   ", lem.steps);
                 audit::check(n + " Leman uses fewer steps than P5", lem.steps < p5.steps ? 1.0 : 0.0, 1.0, 0.0);
             }
+    // (d) transport_charges_fast_chord is the Leman path: identical output for the same seed
+    {
+        const CrystalLattice si(materials::Silicon());
+        DetectorModel det; det.solid.radius = 5.0 * units::cm; det.solid.half_z = 0.5e-3;
+        det.e_field = UniformElectricField{{0.0, 0.0, -1.0e4}};
+        DetectorModel dl = det; dl.charge_stepping = DetectorModel::ChargeStepping::LemanSecondOrder;
+        const SimulationEngine e1(si, det), e2(si, dl);
+        const ChargePhysics cp(si);
+        double s1 = 0, s2 = 0; size_t n1 = 0, n2 = 0;
+        for (int pass = 0; pass < 2; ++pass) {
+            Rng rng(99);
+            std::vector<ChargeTrack> cs;
+            for (int c = 0; c < 10; ++c) cs.push_back(cp.make_charge(ExcitationType::Hole, {0, 0, 0.49e-3}, {0, 0, -1}, 1e-6, 0));
+            std::vector<PhononTrack> ph; std::vector<SensorHit> hits; SimStats st;
+            if (pass == 0) e1.transport_charges_fast_chord(cs, ph, hits, st, rng); else e2.transport_charges(cs, ph, hits, st, rng);
+            double s = 0; for (const auto& p : ph) s += p.energy;
+            (pass == 0 ? s1 : s2) = s; (pass == 0 ? n1 : n2) = ph.size();
+        }
+        audit::check("fast_chord == Leman transport_charges: sum E_Luke", s1, s2, 0.0, 0.0);
+        audit::check("fast_chord == Leman transport_charges: N phonons", double(n1), double(n2), 0.0, 0.0);
+    }
     return audit::result();
 }

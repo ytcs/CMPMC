@@ -216,85 +216,66 @@ private:
 };
 
 // ============================================================================
-// KaplanSurrogateLUT: O(1) Branchless Surrogate Table for Kaplan QP Cascade
-//   Eliminates the iterative `while (!qp.empty() || !phon.empty())` cascade
-//   loop for SIMD / GPU execution by precomputing a 2D empirical quantile table
-//   over incident energy E / (2*Delta) in [1.0, 20.0] x quantile q in [0, 1].
+// KaplanSurrogateLUT: pre-sampled Kaplan cascade outcomes for SIMD / GPU paths.
+//   For each of N_E incident energies on [2 Delta, 2 Delta * E_MAX_DIV_2GAP] the
+//   constructor stores N_S complete outcomes of KaplanFilm::absorb_phonon: the
+//   absorbed fraction and the individual re-emitted phonon energies (as fractions
+//   of the incident energy). A lookup draws one stored outcome from one of the two
+//   bracketing energy nodes (chosen with linear-interpolation probabilities) and
+//   rescales it to the incident energy. Energies outside the table are passed to
+//   the full cascade.
+//   History: the original table stored only (abs_frac, sum of reflected fractions)
+//   and re-emitted the sum as ONE phonon, which then re-broke pairs on re-entry
+//   (collected fraction +13% in a p_ret = 0.9 cavity, tests/test_kaplan), used the
+//   lower energy node only (+10% at 3 Delta) and clamped at 40 Delta.
 // ============================================================================
 class KaplanSurrogateLUT {
 public:
-    static constexpr int N_E = 64; // Energy bins in [2*Delta, 40*Delta]
-    static constexpr int N_Q = 64; // Empirical quantiles per energy bin
-
-    struct SurrogateSample {
-        float abs_frac;  // Fraction of incident energy absorbed in sensor
-        float refl_frac; // Fraction of incident energy re-emitted into crystal
-    };
+    static constexpr int N_E = 128;                 // energy nodes
+    static constexpr int N_S = 512;                 // stored outcomes per node
+    static constexpr double E_MAX_DIV_2GAP = 20.0;  // table covers [2 Delta, 40 Delta]
 
     KaplanSurrogateLUT() = default;
 
-    explicit KaplanSurrogateLUT(const KaplanFilm& film, uint64_t seed = 1337ULL, int mc_trials_per_quantile = 8)
-        : film_(film), table_(N_E * N_Q) {
+    explicit KaplanSurrogateLUT(const KaplanFilm& film, uint64_t seed = 1337ULL, int /*unused*/ = 0)
+        : film_(film), abs_(N_E * N_S), off_(N_E * N_S + 1, 0) {
         Rng rng(seed);
-        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-9);
+        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-12);
         SmallVec<double, 64> refl;
-
-        const int total_samples = N_Q * std::max(1, mc_trials_per_quantile);
-        std::vector<SurrogateSample> samples(total_samples);
-
         for (int ie = 0; ie < N_E; ++ie) {
-            const double u_e = 1.0 + 19.0 * (static_cast<double>(ie) / (N_E - 1));
-            const double E   = u_e * two_delta;
-
-            for (int s = 0; s < total_samples; ++s) {
-                const double edep = film_.absorb_phonon(E, refl, rng);
-                double sum_refl = 0.0;
-                for (double r : refl) sum_refl += r;
-                samples[s] = SurrogateSample{
-                    static_cast<float>(edep / E),
-                    static_cast<float>(sum_refl / E)
-                };
-            }
-
-            std::sort(samples.begin(), samples.end(), [](const SurrogateSample& a, const SurrogateSample& b) {
-                return a.abs_frac < b.abs_frac;
-            });
-
-            for (int iq = 0; iq < N_Q; ++iq) {
-                const int idx = std::min(total_samples - 1, (iq * total_samples) / N_Q);
-                table_[ie * N_Q + iq] = samples[idx];
+            const double E = node_energy(ie, two_delta);
+            for (int s = 0; s < N_S; ++s) {
+                const int k = ie * N_S + s;
+                abs_[k] = static_cast<float>(film_.absorb_phonon(E, refl, rng) / E);
+                for (double r : refl) refl_.push_back(static_cast<float>(r / E));
+                off_[k + 1] = static_cast<uint32_t>(refl_.size());
             }
         }
     }
 
-    // O(1) branchless lookup matching KaplanFilm::absorb_phonon signature
+    // Lookup with the KaplanFilm::absorb_phonon signature
     inline double absorb_phonon_fast(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
+        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-12);
+        const double u = (energy / two_delta - 1.0) / (E_MAX_DIV_2GAP - 1.0) * (N_E - 1);
+        if (film_.is_subgap(energy) || u < 0.0 || u > N_E - 1) {
+            return film_.absorb_phonon(energy, reflected_energies, rng);   // exact path outside the table
+        }
         reflected_energies.clear();
-        if (film_.is_subgap(energy)) {
-            if (energy >= 2.0 * film_.absorber_gap && rng.uniform() < film_.subgap_absorption) {
-                return energy;
-            }
-            reflected_energies.push_back(energy);
-            return 0.0;
-        }
-
-        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-9);
-        const double u_e = std::clamp((energy / two_delta - 1.0) / 19.0, 0.0, 1.0) * (N_E - 1);
-        const int ie     = std::clamp(static_cast<int>(u_e), 0, N_E - 1);
-        const int iq     = std::min(N_Q - 1, static_cast<int>(rng.uniform() * N_Q));
-
-        const SurrogateSample s = table_[ie * N_Q + iq];
-        const double edep  = energy * static_cast<double>(s.abs_frac);
-        const double erefl = energy * static_cast<double>(s.refl_frac);
-        if (erefl > 1e-9) {
-            reflected_energies.push_back(erefl);
-        }
-        return edep;
+        int ie = std::min(static_cast<int>(u), N_E - 2);
+        if (rng.uniform() < (u - ie)) ++ie;
+        const int k = ie * N_S + std::min(N_S - 1, static_cast<int>(rng.uniform() * N_S));
+        for (uint32_t r = off_[k]; r < off_[k + 1]; ++r) reflected_energies.push_back(energy * refl_[r]);
+        return energy * static_cast<double>(abs_[k]);
     }
 
 private:
+    static double node_energy(int ie, double two_delta) noexcept {
+        return two_delta * (1.0 + (E_MAX_DIV_2GAP - 1.0) * (static_cast<double>(ie) / (N_E - 1)));
+    }
     KaplanFilm film_{};
-    std::vector<SurrogateSample> table_;
+    std::vector<float> abs_;
+    std::vector<uint32_t> off_;
+    std::vector<float> refl_;
 };
 
 } // namespace cmpmc

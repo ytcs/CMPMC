@@ -25,7 +25,15 @@ public:
 
     static constexpr int N_CTHETA = 181; // cos(theta) in [-1, 1]
     static constexpr int N_PHI    = 361; // phi in [0, 2*pi]
+    static constexpr int N_OCT    = 256; // 256x256 zero-trig Octahedral FP32 LUT
     static constexpr int N_CDF    = 1024; // Inverse-CDF bins for anharmonic decay
+
+    struct alignas(16) OctLutEntry {
+        float vx;
+        float vy;
+        float vz;
+        float vmag;
+    };
 
     struct Kinematics {
         Vec3 vg_dir;   // Unit group velocity direction in detector frame
@@ -33,9 +41,13 @@ public:
     };
 
     explicit CrystalLattice(const Config& cfg)
-        : cfg_(cfg), vg_lut_(3 * N_CTHETA * N_PHI), sc_3d_(cfg) {
+        : cfg_(cfg),
+          vg_lut_(3 * N_CTHETA * N_PHI),
+          vg_oct_lut_(3 * N_OCT * N_OCT),
+          sc_3d_(cfg) {
         build_stiffness_tensor();
         build_group_velocity_lut();
+        build_octahedral_lut();
         build_decay_cdf_tables();
         build_charge_tensors();
     }
@@ -70,6 +82,68 @@ public:
             lut_at(m_idx, i0,     j0 + 1) * ((1.0 - du) * dv) +
             lut_at(m_idx, i0 + 1, j0 + 1) * (du * dv);
 
+        const double mag = vg_cryst.norm();
+        const Vec3 vg_det = cfg_.orient * (vg_cryst / std::max(mag, 1e-12));
+        return {vg_det.unit(), mag};
+    }
+
+    // Zero-Trigonometry Octahedral Equal-Area Mapping: unit 3D vector -> (u, v) in [-1, 1]^2
+    static inline void oct_encode(const Vec3& k, double& u_out, double& v_out) noexcept {
+        const double l1 = std::abs(k.x) + std::abs(k.y) + std::abs(k.z);
+        const double inv_l1 = (l1 > 1e-18) ? (1.0 / l1) : 1.0;
+        double px = k.x * inv_l1;
+        double py = k.y * inv_l1;
+        if (k.z < 0.0) {
+            const double ox = (1.0 - std::abs(py)) * (px >= 0.0 ? 1.0 : -1.0);
+            const double oy = (1.0 - std::abs(px)) * (py >= 0.0 ? 1.0 : -1.0);
+            px = ox;
+            py = oy;
+        }
+        u_out = std::clamp(px, -1.0, 1.0);
+        v_out = std::clamp(py, -1.0, 1.0);
+    }
+
+    static inline Vec3 oct_decode(double u, double v) noexcept {
+        double kz = 1.0 - std::abs(u) - std::abs(v);
+        double kx = u;
+        double ky = v;
+        if (kz < 0.0) {
+            kx = (1.0 - std::abs(v)) * (u >= 0.0 ? 1.0 : -1.0);
+            ky = (1.0 - std::abs(u)) * (v >= 0.0 ? 1.0 : -1.0);
+        }
+        return Vec3{kx, ky, kz}.unit();
+    }
+
+    // Tier-2 Zero-Trig FP32 Octahedral LUT Query (eliminates std::atan2 from inner loop)
+    inline Kinematics map_k_to_vg_oct(PhononMode mode, const Vec3& k_det) const noexcept {
+        const Vec3 k = cfg_.orient.mul_transpose(k_det);
+        double u_oct = 0.0, v_oct = 0.0;
+        oct_encode(k, u_oct, v_oct);
+
+        const double u = (u_oct + 1.0) * 0.5 * (N_OCT - 1);
+        const double v = (v_oct + 1.0) * 0.5 * (N_OCT - 1);
+
+        const int i0 = std::clamp(static_cast<int>(u), 0, N_OCT - 2);
+        const int j0 = std::clamp(static_cast<int>(v), 0, N_OCT - 2);
+        const float du = static_cast<float>(u - i0);
+        const float dv = static_cast<float>(v - j0);
+
+        const float w00 = (1.0f - du) * (1.0f - dv);
+        const float w10 = du * (1.0f - dv);
+        const float w01 = (1.0f - du) * dv;
+        const float w11 = du * dv;
+
+        const int m_idx = static_cast<int>(mode);
+        const OctLutEntry& e00 = oct_lut_at(m_idx, i0,     j0);
+        const OctLutEntry& e10 = oct_lut_at(m_idx, i0 + 1, j0);
+        const OctLutEntry& e01 = oct_lut_at(m_idx, i0,     j0 + 1);
+        const OctLutEntry& e11 = oct_lut_at(m_idx, i0 + 1, j0 + 1);
+
+        const Vec3 vg_cryst{
+            static_cast<double>(e00.vx * w00 + e10.vx * w10 + e01.vx * w01 + e11.vx * w11),
+            static_cast<double>(e00.vy * w00 + e10.vy * w10 + e01.vy * w01 + e11.vy * w11),
+            static_cast<double>(e00.vz * w00 + e10.vz * w10 + e01.vz * w01 + e11.vz * w11)
+        };
         const double mag = vg_cryst.norm();
         const Vec3 vg_det = cfg_.orient * (vg_cryst / std::max(mag, 1e-12));
         return {vg_det.unit(), mag};
@@ -198,6 +272,7 @@ private:
     Config cfg_;
     double C_[3][3][3][3]{};
     std::vector<Vec3> vg_lut_;
+    std::vector<OctLutEntry> vg_oct_lut_;
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
     physics::Superconductor3D sc_3d_;
@@ -207,6 +282,12 @@ private:
     }
     inline Vec3& lut_at(int m, int i, int j) noexcept {
         return vg_lut_[(m * N_CTHETA + i) * N_PHI + j];
+    }
+    inline const OctLutEntry& oct_lut_at(int m, int i, int j) const noexcept {
+        return vg_oct_lut_[(m * N_OCT + i) * N_OCT + j];
+    }
+    inline OctLutEntry& oct_lut_at(int m, int i, int j) noexcept {
+        return vg_oct_lut_[(m * N_OCT + i) * N_OCT + j];
     }
 
     double e_cond_mass_eV_ = 0.12 * units::m_e_eV;
@@ -252,6 +333,30 @@ private:
                 physics::solve_christoffel_exact(C_, cfg_.density, k_dir, vg, vp);
                 for (int m = 0; m < 3; ++m) {
                     lut_at(m, i, j) = vg[m];
+                }
+            }
+        }
+    }
+
+    void build_octahedral_lut() noexcept {
+        for (int i = 0; i < N_OCT; ++i) {
+            const double u = -1.0 + 2.0 * (static_cast<double>(i) / (N_OCT - 1));
+            for (int j = 0; j < N_OCT; ++j) {
+                const double v = -1.0 + 2.0 * (static_cast<double>(j) / (N_OCT - 1));
+                Vec3 k_dir = oct_decode(u, v);
+                if (std::abs(k_dir.x) < 1e-6 && std::abs(k_dir.y) < 1e-6) {
+                    k_dir = Vec3{1e-6, 0.0, k_dir.z}.unit();
+                }
+                Vec3 vg[3];
+                double vp[3];
+                physics::solve_christoffel_exact(C_, cfg_.density, k_dir, vg, vp);
+                for (int m = 0; m < 3; ++m) {
+                    oct_lut_at(m, i, j) = OctLutEntry{
+                        static_cast<float>(vg[m].x),
+                        static_cast<float>(vg[m].y),
+                        static_cast<float>(vg[m].z),
+                        static_cast<float>(vg[m].norm())
+                    };
                 }
             }
         }

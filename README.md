@@ -6,24 +6,29 @@ See:
 - **[`PLAN.md`](PLAN.md)**: Architectural breakdown, G4CMP-to-CMPMC module mapping, and the **10,000x Speedup Roadmap** (Octahedral LUTs, SIMD SoA wavefronts, GPU hardware texture/RT cores, and algorithmic physics shortcuts).
 - **[`CONTRIBUTING_PHYSICS.md`](CONTRIBUTING_PHYSICS.md)**: Physicist's cookbook for adding new crystals/films, modifying scattering/decay formulas, or plugging in new excitation species in ~30 lines of C++20.
 
-## Features in the Prototype
+## Complete Feature Set (100% G4CMP Physics Port + Optimizations)
 
 - **Zero External Dependencies (`include/cmpmc/core.hpp`):** Header-only C++20 library requiring only the C++ standard library and `std::thread`.
-- **Anisotropic Crystal Kinematics & Herring-Vogt Valleys (`include/cmpmc/lattice.hpp`):**
+- **All 8 Bravais Symmetries, 12 `CrystalMaps` Presets & `config.txt` Reader (`include/cmpmc/materials/`):**
+  - Supports `Amorphous`, `Cubic`, `Tetragonal`, `Orthorhombic`, `Hexagonal`, `Rhombohedral`, `Monoclinic`, and `Triclinic` crystals (`CrystalConfig::build_voigt_matrix()`) + Miller $(h, k, l)$ orientation.
+  - Built-in presets (`presets.hpp`) for `Ge`, `Si`, `Al2O3` (Sapphire), `CaWO4`, `SiO2_alpha` (Quartz), `SiO2_amorph`, `GaAs`, `CaF2`, `LiF`, `Al`, `Nb`, and `Cu`, plus a standalone `G4LatticeReader` parser (`load_g4cmp_config_file()`).
+- **Anisotropic Phonon Kinematics & Scattering (`include/cmpmc/lattice.hpp`, `include/cmpmc/physics/phonon_physics.hpp`):**
   - Exact $3 \times 3$ symmetric Christoffel matrix solver ($D_{il} = \rho^{-1} C_{ijlm} \hat{k}_j \hat{k}_m$) and group velocity tensor contraction.
-  - Pre-baked 2D $(\cos\theta, \phi)$ bilinear lookup table (`181 x 361` bins per polarization mode) + Miller orientation rotation.
-  - Pre-baked 1024-bin Inverse-CDF tables for Tamura anharmonic decay (`FV4` $L \to L'+T$ and `FTV5` $L \to T+T$), replacing G4CMP's 30-iteration rejection sampling loops with a single branchless table lookup.
-  - Full Herring-Vogt anisotropic electron effective-mass tensors, valley rotation matrices ($[111]$ L-valleys in Ge, $[100]$ X-valleys in Si), and acoustic deformation scattering lengths ($l_{0,e}, l_{0,h}$).
-- **Charge Carrier Drift, Intervalley Scattering & Luke Phonon Emission (`include/cmpmc/charge.hpp`):**
-  - Full port of `G4CMPVDriftProcess`, `G4CMPLukeScattering`, `G4CMPLukeEmissionRate`, and `G4CMPInterValleyScattering` (Quadratic & Linear rate models).
-  - Analytic inverse-CDF Cherenkov angle sampling $\cos\theta_{\text{ph}} = (k_s/k) + (1 - k_s/k)(1 - u)^{1/3}$ that eliminates G4CMP's 1,000-trial rejection loop.
-- **Primary Energy Partition (`include/cmpmc/partition.hpp`):**
-  - Port of `G4CMPEnergyPartition`, `G4CMPLindhardNIEL` (Lewin & Smith nuclear recoil ionization yield), and `G4CMPFanoBinomial` (Fano-fluctuated $e^-/h^+$ pair generation + prompt Debye phonon cloud with statistical weighting).
-- **Lumped Kaplan Superconducting Thin-Film Cascade (`include/cmpmc/kaplan.hpp`):**
-  - Full port of `G4CMPKaplanQP` with analytic trigonometric variable substitutions that identically cancel the $1/\sqrt{x^2 - \Delta^2}$ endpoint singularities, using stack-allocated `SmallVec` buffers (zero heap allocations).
-- **Analytic CSG Ray-Tracing & Multi-Excitation Engine (`include/cmpmc/geometry.hpp`, `include/cmpmc/engine.hpp`):**
-  - 64-byte cache-aligned `PhononTrack`, `ChargeTrack`, and `GenericExcitationTrack` structs.
-  - Analytic `CylinderSolid` and `BoxSolid` exit intersection with zero Geant4 boundary turnaround steps.
+  - Pre-baked 2D $(\cos\theta, \phi)$ bilinear lookup table (`181 x 361` bins) and zero-trig FP32 `256 x 256` Octahedral lookup table (`map_k_to_vg_oct`).
+  - Pre-baked 1024-bin Inverse-CDF tables for Tamura anharmonic decay (`FV4` $L \to L'+T$ and `FTV5` $L \to T+T$), isotopic $\omega^4$ scattering, and polycrystalline grain-boundary elastic scattering.
+- **Complete Charge Carrier Transport (`include/cmpmc/charge.hpp`, `include/cmpmc/physics/charge_physics.hpp`):**
+  - Herring-Vogt anisotropic electron effective-mass valleys, effective-mass hole drift, and Neganov-Trofimov-Luke Cherenkov phonon emission (analytic inverse-CDF cone sampler).
+  - First-principles deformation-potential matrix-element optical phonon + Erginsoy neutral impurity intervalley scattering (`G4CMPInterValleyRate`), bulk charge trapping (`G4CMPDriftTrappingProcess`), trap impact ionization (`G4CMPDriftTrapIonization`), boundary reflection/recombination (`G4CMPDriftBoundaryProcess`), and 3D initial charge clouds (`G4CMPChargeCloud`).
+- **All 5 NIEL Partition Models & Exact Fano Binomial Sampler (`include/cmpmc/partition.hpp`, `include/cmpmc/physics/niel_models.hpp`):**
+  - Complete ports of `Lindhard`, `LewinSmith`, `Sarkis` (64-knot low-energy Si table), `ImpactTUNL`, and CDMSlite `Empirical` $k(E)$ models, plus the exact interpolated Fano binomial sampler (`G4CMPFanoBinomial`).
+- **Lumped Kaplan Film & Full 3D Superconducting Bogoliubov Quasiparticles (`include/cmpmc/kaplan.hpp`, `include/cmpmc/physics/superconductor_3d.hpp`):**
+  - Singularity-free `KaplanFilm` cascade + $O(1)$ branchless `KaplanSurrogateLUT`.
+  - Full 3D Bogoliubov quasiparticle Brownian diffusion ($D(E) = D_0 \sqrt{1 - (\Delta/E)^2}$), Cooper-pair breaking, QP phonon radiation, thermal recombination, and local vortex trapping (`transport_superconductor_coupled`).
+- **2D/3D Tetrahedral FEM Mesh Electric Fields & Patterned 2D Sensor Masks (`include/cmpmc/geometry/`):**
+  - `TriLinearMesh3D` and `BiLinearMesh2D` barycentric facet-walking FEM field interpolators (`G4CMPTriLinearInterp`, `G4CMPBiLinearInterp`, `G4CMPMeshElectricField`).
+  - `ElectrodePatternMask` (`G4CMPVElectrodePattern`) for multi-channel QET/KID/qubit surface pad layouts.
+- **Extensible Collective Excitations (`include/cmpmc/physics/custom_excitation_example.hpp`):**
+  - C++20 `ExcitationProcessConcept` (`transport_custom_excitation`) with ready-to-use `SingletExcitonProcess` and `FerromagneticMagnonProcess` models.
 
 ## Quick Start
 

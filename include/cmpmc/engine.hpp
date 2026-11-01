@@ -83,6 +83,8 @@ struct SimStats {
 struct DetectorModel {
     CylinderSolid solid{};
     UniformElectricField e_field = UniformElectricField::from_bias(0.0, 2.54 * units::cm);
+    std::optional<geometry::TriLinearMesh3D> mesh_field_3d = std::nullopt;
+    std::optional<geometry::BiLinearMesh2D>  mesh_field_2d = std::nullopt;
     std::array<SurfaceProperty, static_cast<size_t>(SurfaceId::Count)> surfaces{
         SurfaceProperty::g4cmp_al_sensor_surface(), // TopFace
         SurfaceProperty::g4cmp_al_sensor_surface(), // BottomFace
@@ -91,6 +93,12 @@ struct DetectorModel {
     uint32_t max_bounces       = 5000;
     double min_phonon_eV       = 10.0 * units::ueV; // Cutoff below 2*Delta_W
     double luke_sample_fraction= 1.0;               // Fraction of Luke phonons tracked (with weight = 1/frac)
+
+    inline Vec3 electric_field_at(const Vec3& pos) const noexcept {
+        if (mesh_field_3d.has_value()) return mesh_field_3d->at(pos);
+        if (mesh_field_2d.has_value()) return mesh_field_2d->at(pos);
+        return e_field.at(pos);
+    }
 };
 
 class SimulationEngine {
@@ -137,7 +145,7 @@ public:
             for (uint32_t step = 0; step < 500'000; ++step) {
                 stats.charge_steps++;
 
-                const Vec3 E_Vm = detector_.e_field.at(trk.pos);
+                const Vec3 E_Vm = detector_.electric_field_at(trk.pos);
                 const Vec3 v_cur = charge_phys_.velocity(trk);
                 const double v_cur_mag = v_cur.norm();
 
@@ -178,7 +186,14 @@ public:
                             : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
                         const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
-                        if (!charge_phys_.should_absorb_boundary(trk, bhit.inward_normal,
+                        int32_t ch_id = -1;
+                        bool hit_active_pad = true;
+                        if (surf.electrode_mask.has_value()) {
+                            ch_id = surf.electrode_mask->find_channel(trk.pos, rng);
+                            hit_active_pad = (ch_id >= 0);
+                        }
+                        if (!hit_active_pad ||
+                            !charge_phys_.should_absorb_boundary(trk, bhit.inward_normal,
                                                                  surf.prob_charge_abs, surf.min_k_elec, surf.min_k_hole, rng)) {
                             stats.charge_surface_refls++;
                             trk.pos += bhit.inward_normal * 1e-11;
@@ -197,7 +212,8 @@ public:
                             .incident_energy = trk.ekin + 0.5 * e_gap,
                             .surface_id      = bhit.surface_id,
                             .excitation      = trk.type,
-                            .mode            = PhononMode::L
+                            .mode            = PhononMode::L,
+                            .channel_id      = ch_id
                         });
                         break;
                     }
@@ -310,8 +326,14 @@ public:
                 trk.bounces++;
 
                 const SurfaceProperty& surf = detector_.surfaces[static_cast<size_t>(bhit.surface_id)];
+                int32_t ch_id = -1;
+                bool hit_active_pad = true;
+                if (surf.electrode_mask.has_value()) {
+                    ch_id = surf.electrode_mask->find_channel(trk.pos, rng);
+                    hit_active_pad = (ch_id >= 0);
+                }
 
-                if (surf.kaplan_sensor.has_value() && rng.uniform() < surf.prob_abs) {
+                if (hit_active_pad && surf.kaplan_sensor.has_value() && rng.uniform() < surf.prob_abs) {
                     const KaplanFilm& film = *surf.kaplan_sensor;
                     if (rng.uniform() < film.film_absorption) {
                         const double edep = film.absorb_phonon(trk.energy, kaplan_reflected, rng);
@@ -326,7 +348,8 @@ public:
                                 .incident_energy = trk.energy,
                                 .surface_id      = bhit.surface_id,
                                 .excitation      = ExcitationType::Phonon,
-                                .mode            = trk.mode
+                                .mode            = trk.mode,
+                                .channel_id      = ch_id
                             });
                         }
                         double sum_refl = 0.0;

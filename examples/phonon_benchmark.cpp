@@ -391,6 +391,98 @@ static void run_superconductor_3d_demo() {
               << "  3D QP Brownian Diffusion Steps         : " << stats.qp_diffusion_steps << "\n"
               << "  Energy Conservation Relative Diff      : " << std::scientific << e_cons_diff
               << std::fixed << " (Runtime: " << dt_ms << " ms)\n";
+    std::cout << "========================================================================\n\n";
+}
+
+// ============================================================================
+// 8. 3D/2D Tetrahedral FEM Mesh Field + Patterned 2D Electrode Mask (Burst 5)
+// ============================================================================
+static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
+    std::cout << "========================================================================\n";
+    std::cout << " [8] 3D/2D FEM Mesh Electric Field + Patterned 2D QET Mask (Burst 5)\n";
+    std::cout << "========================================================================\n";
+
+    // (a) Build a 3D Kuhn-tetrahedralized FEM mesh (12x12x12 hex cells = 10,368 tetrahedra)
+    //     for an iZIP-style non-uniform potential V(x,y,z) = -2000 * z + 8000 * (x^2 + y^2)
+    const double R = 3.81 * units::cm;
+    const double H = 1.27 * units::cm;
+    const auto mesh_3d = geometry::TriLinearMesh3D::build_cartesian_grid(
+        R, R, H, 12, 12, 12,
+        [](const Vec3& p) {
+            return -2000.0 * p.z + 8000.0 * (p.x * p.x + p.y * p.y);
+        }
+    );
+
+    // Build a 2D axisymmetric (r, z) triangular FEM mesh (24x24 cells = 1,152 triangles)
+    const auto mesh_2d = geometry::BiLinearMesh2D::build_grid(
+        0.0, R, -H, H, 24, 24,
+        [](double r, double z) {
+            return -2000.0 * z + 8000.0 * (r * r);
+        },
+        /*axisymmetric_rz=*/true
+    );
+
+    const Vec3 test_pt{1.0 * units::cm, -0.5 * units::cm, 0.3 * units::cm};
+    const Vec3 E_3d = mesh_3d.at(test_pt);
+    const Vec3 E_2d = mesh_2d.at(test_pt);
+
+    // (b) Configure detector with 3D Tetrahedral FEM field and 5-channel SuperCDMS QET mask on TopFace
+    DetectorModel det{};
+    det.solid.radius = R;
+    det.solid.half_z = H;
+    det.mesh_field_3d = mesh_3d;
+    det.luke_sample_fraction = 0.05;
+    det.surfaces[static_cast<size_t>(SurfaceId::TopFace)].electrode_mask =
+        geometry::ElectrodePatternMask::supercdms_qet_mask(R, /*fill_fraction=*/0.85);
+
+    SimulationEngine engine(ge_lattice, det);
+    EnergyPartition partitioner(ge_lattice);
+
+    Rng rng(2026);
+    std::vector<PhononTrack> phonons;
+    std::vector<ChargeTrack> charges;
+    std::vector<SensorHit> hits;
+    SimStats stats{};
+
+    PartitionOptions part_opts{};
+    part_opts.max_sampled_phonons = 500;
+    partitioner.partition_deposit({0.5 * units::cm, 0.2 * units::cm, 0.0}, 0.0,
+                                  50.0 * units::eV, /*is_nuclear_recoil=*/false,
+                                  charges, phonons, rng, part_opts);
+
+    engine.transport_charges(charges, phonons, hits, stats, rng);
+    engine.transport(phonons, hits, stats, rng);
+
+    std::array<uint32_t, 5> ch_hits{0, 0, 0, 0, 0};
+    for (const SensorHit& h : hits) {
+        if (h.surface_id == SurfaceId::TopFace && h.channel_id >= 0 && h.channel_id < 5) {
+            ch_hits[h.channel_id]++;
+        }
+    }
+
+    // (c) Compare Standard `map_k_to_vg` vs Zero-Trig FP32 Octahedral `map_k_to_vg_oct`
+    double max_cos_err = 0.0;
+    for (int i = 0; i < 1000; ++i) {
+        const Vec3 kd = rng.isotropic_dir();
+        const auto k_std = ge_lattice.map_k_to_vg(PhononMode::ST, kd);
+        const auto k_oct = ge_lattice.map_k_to_vg_oct(PhononMode::ST, kd);
+        max_cos_err = std::max(max_cos_err, 1.0 - k_std.vg_dir.dot(k_oct.vg_dir));
+    }
+
+    KaplanSurrogateLUT kaplan_lut(KaplanFilm::aluminum_sensor());
+    SmallVec<double, 64> refl;
+    const double fast_edep = kaplan_lut.absorb_phonon_fast(2.0 * units::meV, refl, rng);
+
+    std::cout << std::fixed << std::setprecision(2)
+              << "  3D Tetrahedral FEM Mesh  : " << mesh_3d.num_tetrahedra() << " tets, E(test) = ("
+              << E_3d.x << ", " << E_3d.y << ", " << E_3d.z << ") V/m\n"
+              << "  2D Axisym (r,z) FEM Mesh : " << mesh_2d.num_triangles() << " tris, E(test) = ("
+              << E_2d.x << ", " << E_2d.y << ", " << E_2d.z << ") V/m\n"
+              << "  TopFace QET Channel Hits : Ch0(Inner)=" << ch_hits[0]
+              << ", Ch1=" << ch_hits[1] << ", Ch2=" << ch_hits[2]
+              << ", Ch3=" << ch_hits[3] << ", Ch4(Guard)=" << ch_hits[4] << "\n"
+              << "  Octahedral FP32 LUT Err  : max(1 - cos dtheta) = " << std::scientific << max_cos_err
+              << std::fixed << ", KaplanSurrogateLUT sample = " << (fast_edep / units::meV) << " meV\n";
     std::cout << "========================================================================\n";
 }
 
@@ -419,6 +511,7 @@ int main(int argc, char** argv) {
     run_charge_trapping_demo();
     run_niel_fano_demo();
     run_superconductor_3d_demo();
+    run_mesh_field_and_mask_demo(ge_lattice);
 
     return 0;
 }

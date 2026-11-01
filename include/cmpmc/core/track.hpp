@@ -101,6 +101,7 @@ struct SensorHit {
     SurfaceId surface_id;
     ExcitationType excitation = ExcitationType::Phonon;
     PhononMode mode           = PhononMode::L;
+    int32_t channel_id        = -1; // Patterned electrode channel ID (-1 if unpatterned)
 };
 
 } // namespace cmpmc

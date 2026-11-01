@@ -1,6 +1,8 @@
 #pragma once
 
 #include "cmpmc/core.hpp"
+#include "cmpmc/geometry/mesh_field.hpp"
+#include "cmpmc/geometry/surface_mask.hpp"
 #include "cmpmc/kaplan.hpp"
 #include <algorithm>
 #include <cmath>
@@ -38,6 +40,7 @@ struct SurfaceProperty {
     std::vector<double> anh_coeffs  = {0.0};
 
     std::optional<KaplanFilm> kaplan_sensor = std::nullopt;
+    std::optional<geometry::ElectrodePatternMask> electrode_mask = std::nullopt;
 
     // Evaluate polynomial c[0] + c[1]*f + c[2]*f^2 + ... via Horner's rule
     static inline double eval_poly(const std::vector<double>& coeffs, double f_ghz) noexcept {

@@ -4,7 +4,9 @@
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <vector>
 
 namespace cmpmc {
 
@@ -211,6 +213,88 @@ private:
         }
         return qpE;
     }
+};
+
+// ============================================================================
+// KaplanSurrogateLUT: O(1) Branchless Surrogate Table for Kaplan QP Cascade
+//   Eliminates the iterative `while (!qp.empty() || !phon.empty())` cascade
+//   loop for SIMD / GPU execution by precomputing a 2D empirical quantile table
+//   over incident energy E / (2*Delta) in [1.0, 20.0] x quantile q in [0, 1].
+// ============================================================================
+class KaplanSurrogateLUT {
+public:
+    static constexpr int N_E = 64; // Energy bins in [2*Delta, 40*Delta]
+    static constexpr int N_Q = 64; // Empirical quantiles per energy bin
+
+    struct SurrogateSample {
+        float abs_frac;  // Fraction of incident energy absorbed in sensor
+        float refl_frac; // Fraction of incident energy re-emitted into crystal
+    };
+
+    KaplanSurrogateLUT() = default;
+
+    explicit KaplanSurrogateLUT(const KaplanFilm& film, uint64_t seed = 1337ULL, int mc_trials_per_quantile = 8)
+        : film_(film), table_(N_E * N_Q) {
+        Rng rng(seed);
+        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-9);
+        SmallVec<double, 64> refl;
+
+        const int total_samples = N_Q * std::max(1, mc_trials_per_quantile);
+        std::vector<SurrogateSample> samples(total_samples);
+
+        for (int ie = 0; ie < N_E; ++ie) {
+            const double u_e = 1.0 + 19.0 * (static_cast<double>(ie) / (N_E - 1));
+            const double E   = u_e * two_delta;
+
+            for (int s = 0; s < total_samples; ++s) {
+                const double edep = film_.absorb_phonon(E, refl, rng);
+                double sum_refl = 0.0;
+                for (double r : refl) sum_refl += r;
+                samples[s] = SurrogateSample{
+                    static_cast<float>(edep / E),
+                    static_cast<float>(sum_refl / E)
+                };
+            }
+
+            std::sort(samples.begin(), samples.end(), [](const SurrogateSample& a, const SurrogateSample& b) {
+                return a.abs_frac < b.abs_frac;
+            });
+
+            for (int iq = 0; iq < N_Q; ++iq) {
+                const int idx = std::min(total_samples - 1, (iq * total_samples) / N_Q);
+                table_[ie * N_Q + iq] = samples[idx];
+            }
+        }
+    }
+
+    // O(1) branchless lookup matching KaplanFilm::absorb_phonon signature
+    inline double absorb_phonon_fast(double energy, SmallVec<double, 64>& reflected_energies, Rng& rng) const noexcept {
+        reflected_energies.clear();
+        if (film_.is_subgap(energy)) {
+            if (energy >= 2.0 * film_.absorber_gap && rng.uniform() < film_.subgap_absorption) {
+                return energy;
+            }
+            reflected_energies.push_back(energy);
+            return 0.0;
+        }
+
+        const double two_delta = 2.0 * std::max(film_.gap_energy, 1e-9);
+        const double u_e = std::clamp((energy / two_delta - 1.0) / 19.0, 0.0, 1.0) * (N_E - 1);
+        const int ie     = std::clamp(static_cast<int>(u_e), 0, N_E - 1);
+        const int iq     = std::min(N_Q - 1, static_cast<int>(rng.uniform() * N_Q));
+
+        const SurrogateSample s = table_[ie * N_Q + iq];
+        const double edep  = energy * static_cast<double>(s.abs_frac);
+        const double erefl = energy * static_cast<double>(s.refl_frac);
+        if (erefl > 1e-9) {
+            reflected_energies.push_back(erefl);
+        }
+        return edep;
+    }
+
+private:
+    KaplanFilm film_{};
+    std::vector<SurrogateSample> table_;
 };
 
 } // namespace cmpmc

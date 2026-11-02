@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { cc: gcc, cxx: g++ }
+          - { cc: clang, cxx: clang++ }
+    env:
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMPMC_WARNINGS_AS_ERRORS=ON -DCMPMC_BUILD_BENCHMARKS=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j 4
+      - name: Install and consume
+        run: |
+          cmake --install build --prefix "$RUNNER_TEMP/cmpmc"
+          mkdir -p "$RUNNER_TEMP/consumer"
+          cat > "$RUNNER_TEMP/consumer/CMakeLists.txt" <<'CMAKE'
+          cmake_minimum_required(VERSION 3.21)
+          project(consumer CXX)
+          find_package(cmpmc 0.1 REQUIRED)
+          add_executable(consumer main.cpp)
+          target_link_libraries(consumer PRIVATE cmpmc::cmpmc)
+          CMAKE
+          printf '#include <cmpmc/cmpmc.hpp>\nint main() { return cmpmc::version.major >= 0 ? 0 : 1; }\n' > "$RUNNER_TEMP/consumer/main.cpp"
+          cmake -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/cmpmc"
+          cmake --build "$RUNNER_TEMP/consumer/build"
+          "$RUNNER_TEMP/consumer/build/consumer"
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the multi-threading test under ThreadSanitizer
+        run: |
+          g++ -std=c++20 -O1 -g -fsanitize=thread -Iinclude -Itests tests/test_parallel.cpp -o test_parallel_tsan -pthread
+          TSAN_OPTIONS=halt_on_error=1 ./test_parallel_tsan

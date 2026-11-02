@@ -1,14 +1,19 @@
-// R16 test: Leman second-order charge time stepping (DetectorModel::ChargeStepping::LemanSecondOrder;
-// 1109.1193 Sec. V.E Eqs. (26)-(30) [FT]) against a converged first-order reference.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
+// Leman second-order charge time stepping (DetectorModel::ChargeStepping::LemanSecondOrder;
+// Leman, arXiv:1109.1193, Sec. V.E, Eqs. (26)-(30)) against a converged first-order reference.
 //  Reference: first-order stepping with the wavevector change per step <= 0.01 max(k_s, |k|)
-//  (R15 P5 at 5x finer cap; P5's own default is 0.05). Second order: sampling step <= 0.25 max(k_s, |k|).
+//  (the default first-order stepping at a 5x finer cap; its default is 0.05). Second order: sampling step <= 0.25 max(k_s, |k|).
 //  For e-/h+ in Ge and Si at 1, 10, 100 V/cm over 1 mm:
-//  (a) per-carrier energy closure (campaign WP7-E-v3 (E11)): sum E_Luke + dE_kin = e E . dr, <= 1e-3;
+//  (a) per-carrier energy closure (work done by the field = Luke phonon energy + kinetic energy
+//      change): sum E_Luke + dE_kin = e E . dr, <= 1e-3;
 //  (b) NTL phonon mean energy <E_Luke> and phonons per carrier vs the reference, 3%;
-//  (c) cost: charge steps per carrier relative to P5 (reported; check: fewer steps than P5);
-//  (d) transport_charges_fast_chord now runs the Leman path (identical output for one seed).
-#include "audit_common.hpp"
-#include "cmpmc/engine.hpp"
+//  (c) cost: charge steps per carrier relative to default first-order stepping (reported;
+//      check: fewer steps);
+//  (d) transport_charges_fast_chord runs the Leman path (identical output for one seed).
+#include "test_support.hpp"
+#include "cmpmc/transport/engine.hpp"
 #include <string>
 #include <vector>
 
@@ -53,16 +58,16 @@ int main() {
             for (double E : {100.0, 1000.0, 1.0e4}) {
                 const std::string n = cfg.name + (type == ExcitationType::Electron ? " e- " : " h+ ") + std::to_string(int(E)) + " V/m";
                 const R ref = drift(cfg, type, E, NC, false, 0.01);
-                const R p5 = drift(cfg, type, E, NC, false, 0.05);
+                const R first_order = drift(cfg, type, E, NC, false, 0.05);
                 const R lem = drift(cfg, type, E, NC, true, 0.25);
-                audit::check(n + " Leman (E11) closure", lem.closure, 0.0, 0.0, 1e-3);
-                audit::check(n + " Leman <E_Luke> vs fine first-order ref", lem.emean, ref.emean, 0.03);
-                audit::check(n + " Leman phonons/carrier vs ref", lem.nph, ref.nph, 0.03);
-                audit::info(n + " P5 <E_Luke> rel. deviation from ref", p5.emean / ref.emean - 1.0);
-                audit::info(n + " steps/carrier: ref, P5, Leman", ref.steps);
-                audit::info("   ", p5.steps);
-                audit::info("   ", lem.steps);
-                audit::check(n + " Leman uses fewer steps than P5", lem.steps < p5.steps ? 1.0 : 0.0, 1.0, 0.0);
+                cmpmc_test::check(n + " Leman energy closure", lem.closure, 0.0, 0.0, 1e-3);
+                cmpmc_test::check(n + " Leman <E_Luke> vs fine first-order ref", lem.emean, ref.emean, 0.03);
+                cmpmc_test::check(n + " Leman phonons/carrier vs ref", lem.nph, ref.nph, 0.03);
+                cmpmc_test::info(n + " first-order <E_Luke> rel. deviation from ref", first_order.emean / ref.emean - 1.0);
+                cmpmc_test::info(n + " steps/carrier: ref, first-order, Leman", ref.steps);
+                cmpmc_test::info("   ", first_order.steps);
+                cmpmc_test::info("   ", lem.steps);
+                cmpmc_test::check(n + " Leman uses fewer steps than first-order", lem.steps < first_order.steps ? 1.0 : 0.0, 1.0, 0.0);
             }
     // (d) transport_charges_fast_chord is the Leman path: identical output for the same seed
     {
@@ -82,8 +87,8 @@ int main() {
             double s = 0; for (const auto& p : ph) s += p.energy;
             (pass == 0 ? s1 : s2) = s; (pass == 0 ? n1 : n2) = ph.size();
         }
-        audit::check("fast_chord == Leman transport_charges: sum E_Luke", s1, s2, 0.0, 0.0);
-        audit::check("fast_chord == Leman transport_charges: N phonons", double(n1), double(n2), 0.0, 0.0);
+        cmpmc_test::check("fast_chord == Leman transport_charges: sum E_Luke", s1, s2, 0.0, 0.0);
+        cmpmc_test::check("fast_chord == Leman transport_charges: N phonons", double(n1), double(n2), 0.0, 0.0);
     }
-    return audit::result();
+    return cmpmc_test::result();
 }

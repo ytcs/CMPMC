@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 #pragma once
 
-#include "cmpmc/core.hpp"
+#include "cmpmc/core/core.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -10,11 +13,15 @@
 #include <string>
 #include <vector>
 
+// Electric fields interpolated on finite-element meshes: piecewise-linear
+// potentials on 3D tetrahedral meshes (TriLinearMesh3D) and on 2D triangular
+// meshes, planar or axisymmetric (BiLinearMesh2D). Positions in metres,
+// potentials in volts, fields in V/m.
+
 namespace cmpmc::geometry {
 
 // ============================================================================
-// 1. TriLinearMesh3D: 3D Tetrahedral FEM Mesh Electric Field & Potential
-//    Replaces: G4CMPTriLinearInterp & G4CMPMeshElectricField (3D mode)
+// TriLinearMesh3D: 3D tetrahedral FEM mesh, electric field and potential
 //
 //    Physics & Numerical Method:
 //    - Given a 3D tetrahedral mesh with nodal coordinates X[n] (m) and
@@ -55,7 +62,7 @@ public:
     size_t num_tetrahedra() const noexcept { return Tetra_.size(); }
 
     // Walk tetrahedral mesh starting from `tet_hint` (updated in-place).
-    // Returns true if `p` is inside the mesh, false if walk hits an exteriorhull facet.
+    // Returns true if `p` is inside the mesh, false if walk hits an exterior hull facet.
     bool find_tetrahedron(const Vec3& p, int& tet_hint, std::array<double, 4>& bary) const noexcept {
         if (Tetra_.empty()) return false;
         if (tet_hint < 0 || tet_hint >= static_cast<int>(Tetra_.size())) {
@@ -181,7 +188,11 @@ public:
         return TriLinearMesh3D(std::move(verts), std::move(pots), std::move(tets));
     }
 
-    // Load G4CMP ASCII coordinates/potentials file (x y z V) and 4-node tetrahedra file (i0 i1 i2 i3)
+    // Load a mesh from two whitespace-separated ASCII files (the layout also used by
+    // G4CMP mesh fields): `coords_file` has one node per line "x y z V";
+    // `tets_file` has one tetrahedron per line "i0 i1 i2 i3" (0-based node indices).
+    // Lines starting with '#' or '%' are skipped. Coordinates and potentials are
+    // multiplied by coord_unit_m and potential_unit_V.
     static TriLinearMesh3D load_from_files(const std::string& coords_file,
                                            const std::string& tets_file,
                                            double coord_unit_m = 1.0,
@@ -325,8 +336,7 @@ private:
 };
 
 // ============================================================================
-// 2. BiLinearMesh2D: 2D Triangular FEM Mesh Electric Field & Potential
-//    Replaces: G4CMPBiLinearInterp & G4CMPMeshElectricField (2D / Axisymmetric)
+// BiLinearMesh2D: 2D triangular FEM mesh, electric field and potential
 //
 //    Supports either:
 //    - Axisymmetric cylindrical (r, z) meshes (`axisymmetric_rz = true`), where

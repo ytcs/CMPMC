@@ -1,7 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 #pragma once
+
+// Material description: plain data structs for a crystal (CrystalConfig) and a
+// superconducting sensor film (SuperconductorFilmConfig). All quantities are in
+// SI units unless noted (energies in eV; see cmpmc/core/units.hpp).
 
 #include "cmpmc/core/math.hpp"
 #include "cmpmc/core/units.hpp"
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -10,6 +18,7 @@
 
 namespace cmpmc {
 
+// Crystal symmetry class; selects which Voigt stiffness components are independent.
 enum class BravaisGroup : uint8_t {
     Amorphous    = 0,
     Cubic        = 1,
@@ -21,19 +30,16 @@ enum class BravaisGroup : uint8_t {
     Triclinic    = 7
 };
 
+// Intervalley scattering rate model for conduction electrons.
 enum class IVRateModel : uint8_t {
-    Quadratic = 0, // Edelweiss parametrization: rate * (E0^2 + E^2)^(power/2)
+    Quadratic = 0, // EDELWEISS parametrisation: rate * (E0^2 + E^2)^(power/2)
     Linear    = 1, // Power-law parametrization: rate0 + rate1 * E^power
     Matrix    = 2  // First-principles deformation potential matrix-element model
 };
 
-// ============================================================================
-// CrystalConfig: Complete Physical Datasheet for Any Crystal Symmetry Group
-// Supports all 8 Bravais symmetry groups (Cubic, Rhombohedral, Tetragonal,
-// Hexagonal, Orthorhombic, Monoclinic, Triclinic, Amorphous), Miller (hkl)
-// orientation, polycrystal grain-boundary scattering, charge valleys, and
-// bulk superconductor parameters.
-// ============================================================================
+// CrystalConfig: physical parameters of a crystal. Covers all eight symmetry
+// classes of BravaisGroup, Miller (hkl) orientation, grain-boundary scattering,
+// conduction-band valleys, charge trapping, and bulk superconductor parameters.
 struct CrystalConfig {
     std::string name     = "Ge";
     BravaisGroup group   = BravaisGroup::Cubic;
@@ -135,7 +141,7 @@ struct CrystalConfig {
         C_custom[j_1based - 1][i_1based - 1] = val_Pa;
     }
 
-    // Align Miller normal vector (h, k, l) with the detector +Z axis (matches G4LatticePhysical::SetMillerOrientation)
+    // Align Miller normal vector (h, k, l) with the detector +Z axis
     inline void set_miller_orientation(int h, int k, int l, double rot_rad = 0.0) noexcept {
         const Vec3 norm = Vec3{static_cast<double>(h), static_cast<double>(k), static_cast<double>(l)}.unit();
         const double theta = std::acos(std::clamp(norm.z, -1.0, 1.0));
@@ -153,8 +159,8 @@ struct CrystalConfig {
         }};
     }
 
-    // Build full 6x6 symmetric Voigt matrix applying Bravais group symmetries
-    // Matches G4CMPCrystalGroup::FillElReduced
+    // Build the full symmetric 6x6 Voigt matrix from the independent components
+    // allowed by the symmetry class (standard reduced-stiffness relations).
     inline std::array<std::array<double, 6>, 6> build_voigt_matrix() const noexcept {
         std::array<std::array<double, 6>, 6> V = C_custom;
         if (!has_custom_C) {
@@ -219,19 +225,18 @@ struct CrystalConfig {
     }
 };
 
-// ============================================================================
-// SuperconductorFilmConfig: Thin-Film Quasiparticle Cascade Parameters
-// Reference: S.B. Kaplan et al., Phys. Rev. B 14 (1976)
-// ============================================================================
 // Film phonon-loss model of the Kaplan cascade (KaplanFilm):
-//   G4CMPMeanFreePath:     G4CMP law, P_esc = exp(-path/lambda), lambda = v_s tau0/(1 + slope (Omega/D - 2))
-//                          (2302.05998 Eqs. (17)-(18) [FT]); legacy default.
+//   MeanFreePath:          escape probability P_esc = exp(-path/lambda) with a linear lifetime law
+//                          lambda = v_s tau0 / (1 + slope (Omega/D - 2)) (arXiv:2302.05998,
+//                          Eqs. (17)-(18)). Default.
 //   KaplanRateCompetition: a film phonon of energy Omega >= 2D breaks a pair with probability
 //                          1/(1 + tau_pb(Omega)/tau_l), otherwise it is lost to the substrate, with the exact
 //                          T = 0 Kaplan rate 1/tau_pb(Omega) = I(Omega)/(pi D tau0) and the loss time tau_l
-//                          (1401.1937 Eqs. (2)-(5) [FT]: tau_l/tau_0^phi is the film-loss parameter).
-enum class FilmLossModel : uint8_t { G4CMPMeanFreePath = 0, KaplanRateCompetition = 1 };
+//                          (arXiv:1401.1937, Eqs. (2)-(5); tau_l/tau_0^phi is the film-loss parameter).
+enum class FilmLossModel : uint8_t { MeanFreePath = 0, KaplanRateCompetition = 1 };
 
+// SuperconductorFilmConfig: parameters of the thin-film quasiparticle cascade
+// (S. B. Kaplan et al., Phys. Rev. B 14, 4854 (1976)).
 struct SuperconductorFilmConfig {
     double film_absorption       = 0.20;                 // Geometric sensor coverage / absorption prob
     double film_thickness        = 600.0 * units::nm;    // Film thickness d
@@ -247,7 +252,7 @@ struct SuperconductorFilmConfig {
     double absorber_eff_slope    = 0.0;                  // Efficiency slope vs energy
     double temperature           = 0.05e-3;              // Film operating temperature (K)
     bool keep_all_phonons        = true;
-    FilmLossModel loss_model     = FilmLossModel::G4CMPMeanFreePath;
+    FilmLossModel loss_model     = FilmLossModel::MeanFreePath;
     double phonon_loss_time      = 0.0;                  // tau_l [s] for KaplanRateCompetition (<= 0: no loss)
 };
 

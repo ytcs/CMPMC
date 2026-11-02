@@ -1,44 +1,22 @@
-// Audit test: material presets.
-//  (a) every phonon/charge constant of the presets vs G4CMP CrystalMaps/<mat>/config.txt
-//      (the port claim), read with CMPMC's own load_g4cmp_config_file; skipped if the
-//      G4CMP tree is absent (set G4CMP_CRYSTALMAPS);
-//  (b) isotope constant B rebuilt independently, B = 4 pi^3 Gamma_md Omega <v^-3>,
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
+// Material presets against independent references.
+//  (a) isotope constant B rebuilt independently, B = 4 pi^3 Gamma_md Omega <v^-3>,
 //      <v^-3> = (1/3) sum_modes <v_p^-3>_{4pi} from CMPMC's own Christoffel solver and
-//      Gamma_md from IUPAC isotope abundances (2408.04732 Eqs. (4)-(9) [FT]);
-//  (c) campaign values: Si eps_eh, F_eh (WP5-v4 Sec. 6.4: 3.749 eV, 0.119 at 5.9 keV),
-//      Debye (max optical) frequencies (2408.04732 Table 5 [FT]: Si 15.28, Ge 9.02,
-//      GaAs 8.58 THz), GaAs A, F_TT (2408.04732 Table 3).
-#include "audit_common.hpp"
-#include "cmpmc/lattice.hpp"
-#include "cmpmc/materials/config_reader.hpp"
-#include <cstdlib>
-#include <filesystem>
+//      Gamma_md from IUPAC isotope abundances (arXiv:2408.04732, Eqs. (4)-(9));
+//  (b) published values: Si eps_eh, F_eh (arXiv:2004.11499: 3.749 eV, 0.119 at 5.9 keV),
+//      Debye (max optical) frequencies (arXiv:2408.04732, Table 5: Si 15.28, Ge 9.02,
+//      GaAs 8.58 THz), GaAs A, F_TT (arXiv:2408.04732, Table 3).
+#include "test_support.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <vector>
 
 using namespace cmpmc;
 
-static void cmp_g4cmp(const CrystalConfig& p, const std::string& dir) {
-    const std::string f = dir + "/" + p.name + "/config.txt";
-    if (!std::filesystem::exists(f)) { std::printf("# skip %s (no %s)\n", p.name.c_str(), f.c_str()); return; }
-    const CrystalConfig g = materials::load_g4cmp_config_file(f, p.density, p.name);
-    const std::string n = p.name + " preset vs G4CMP config: ";
-    const auto Vp = p.build_voigt_matrix(), Vg = g.build_voigt_matrix();
-    double dv = 0, vmax = 0;
-    for (int i = 0; i < 6; ++i) for (int j = 0; j < 6; ++j) { dv = std::max(dv, std::abs(Vp[i][j] - Vg[i][j])); vmax = std::max(vmax, std::abs(Vg[i][j])); }
-    audit::check(n + "max |C_ij - C_ij(G4CMP)| / max C", dv / vmax, 0.0, 0.0, 1e-6);
-    audit::check(n + "B_iso", p.B_iso, g.B_iso, 1e-6, 1e-60);
-    audit::check(n + "A_anh", p.A_anh, g.A_anh, 1e-6);
-    audit::check(n + "fTT", p.fTT_frac, g.fTT_frac, 1e-6);
-    audit::check(n + "LDOS", p.fLDOS, g.fLDOS, 1e-6);
-    audit::info(n + "Debye (preset; G4CMP value next line)", p.debye_freq);
-    audit::info(n + "Debye (G4CMP; deliberate deviation for Ge, GaAs)", g.debye_freq);
-    audit::check(n + "v_L", p.v_sound, g.v_sound, 1e-6);
-    audit::check(n + "v_T", p.v_trans, g.v_trans, 1e-6);
-}
-
 struct Iso { double m, f; };
 static double gamma_md(const std::vector<std::vector<Iso>>& sites) {
-    // 2408.04732 Eqs. (5)-(9) with equal stoichiometry per listed site
+    // arXiv:2408.04732, Eqs. (5)-(9), with equal stoichiometry per listed site
     double Mbar = 0, dM2 = 0;
     for (const auto& s : sites) { double Mn = 0; for (auto i : s) Mn += i.f * i.m;
         double d = 0; for (auto i : s) d += i.f * (i.m - Mn) * (i.m - Mn); Mbar += Mn; dM2 += d; }
@@ -60,14 +38,6 @@ static double v3inv(const CrystalConfig& cfg) {
 
 int main() {
     std::printf("# test_presets\n");
-    const char* env = std::getenv("G4CMP_CRYSTALMAPS");
-    const std::string dir = env ? env : "/home/user/ytcs/G4CMP-ref/CrystalMaps";
-    for (const auto& c : {materials::Germanium(), materials::Silicon(), materials::Sapphire(),
-                          materials::CalciumTungstate(), materials::GalliumArsenide(),
-                          materials::LithiumFluoride(), materials::CalciumFluoride(),
-                          materials::AluminumCrystal(), materials::NiobiumCrystal()})
-        cmp_g4cmp(c, dir);
-
     const double pi3 = units::pi * units::pi * units::pi;
     // IUPAC 2013 representative abundances and atomic masses (u)
     const std::vector<Iso> Si = {{27.97693, 0.92223}, {28.97649, 0.04685}, {29.97377, 0.03092}};
@@ -79,17 +49,17 @@ int main() {
     for (auto& k : {Case{materials::Silicon(), 5.431e-10, {Si}}, Case{materials::Germanium(), 5.658e-10, {Ge}},
                     Case{materials::GalliumArsenide(), 5.653e-10, {Ga, As}}}) {
         const double g = gamma_md(k.s), Om = k.a * k.a * k.a / 8.0, B = 4 * pi3 * g * Om * v3inv(k.c);
-        audit::info(k.c.name + " Gamma_md (independent)", g);
-        audit::check(k.c.name + " B_iso preset vs 4pi^3 Gamma Omega <v^-3>", k.c.B_iso, B, 0.10);
+        cmpmc_test::info(k.c.name + " Gamma_md (independent)", g);
+        cmpmc_test::check(k.c.name + " B_iso preset vs 4pi^3 Gamma Omega <v^-3>", k.c.B_iso, B, 0.10);
     }
 
     const auto si = materials::Silicon(), ge = materials::Germanium(), ga = materials::GalliumArsenide();
-    audit::check("Si pair energy vs campaign 3.749 eV (WP5-v4 6.4)", si.pair_energy, 3.749, 0.005);
-    audit::check("Si Fano vs campaign 0.119 (WP5-v4 6.4)", si.fano_factor, 0.119, 0.05);
-    audit::check("Si Debye (THz) vs 2408.04732 T5 15.28", si.debye_freq / units::THz, 15.28, 0.03);
-    audit::check("Ge Debye (THz) vs campaign 8.64 (WP8-R T1.1)", ge.debye_freq / units::THz, 8.64, 0.01);
-    audit::check("GaAs Debye (THz) vs 2408.04732 T5 8.58", ga.debye_freq / units::THz, 8.58, 0.05);
-    audit::check("GaAs A_anh vs 2408.04732 T3 7.77e-55", ga.A_anh, 7.77e-55, 0.02);
-    audit::check("GaAs F_TT vs 2408.04732 T3 0.77", ga.fTT_frac, 0.77, 0.02);
-    return audit::result();
+    cmpmc_test::check("Si pair energy vs 3.749 eV (arXiv:2004.11499)", si.pair_energy, 3.749, 0.005);
+    cmpmc_test::check("Si Fano vs 0.119 (arXiv:2004.11499)", si.fano_factor, 0.119, 0.05);
+    cmpmc_test::check("Si Debye (THz) vs 15.28 (arXiv:2408.04732 Tab. 5)", si.debye_freq / units::THz, 15.28, 0.03);
+    cmpmc_test::check("Ge Debye (THz) vs 8.64 (max optical-phonon freq.)", ge.debye_freq / units::THz, 8.64, 0.01);
+    cmpmc_test::check("GaAs Debye (THz) vs 8.58 (arXiv:2408.04732 Tab. 5)", ga.debye_freq / units::THz, 8.58, 0.05);
+    cmpmc_test::check("GaAs A_anh vs 7.77e-55 (arXiv:2408.04732 Tab. 3)", ga.A_anh, 7.77e-55, 0.02);
+    cmpmc_test::check("GaAs F_TT vs 0.77 (arXiv:2408.04732 Tab. 3)", ga.fTT_frac, 0.77, 0.02);
+    return cmpmc_test::result();
 }

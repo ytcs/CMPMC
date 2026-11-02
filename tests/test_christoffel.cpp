@@ -1,11 +1,14 @@
-// Audit test: Christoffel solver and group-velocity lookup tables.
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
+// Christoffel solver and group-velocity lookup tables.
 //  (a) phase velocities along [100], [110], [111] vs the closed cubic forms;
 //  (b) group velocity vs a central finite difference of omega(k) = |k| v_p(k_hat);
 //  (c) error of the bilinear (cos theta, phi) LUT (map_k_to_vg) and of the FP32
 //      octahedral LUT (map_k_to_vg_oct) against the exact solver over random k_hat,
 //      reported as quantiles of the direction error (mrad) and |v_g| error.
-#include "audit_common.hpp"
-#include "cmpmc/lattice.hpp"
+#include "test_support.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <algorithm>
 #include <vector>
 #include <chrono>
@@ -29,17 +32,17 @@ static void run_cubic(const CrystalConfig& cfg) {
     Vec3 vg[3]; double vp[3];
     const std::string n = cfg.name;
     exact(C, r, {1, 0, 0}, vg, vp);
-    audit::check(n + " [100] v_L", vp[0], std::sqrt(c11 / r), 1e-10);
-    audit::check(n + " [100] v_T (FT)", vp[1], std::sqrt(c44 / r), 1e-10);
-    audit::check(n + " [100] v_T (ST)", vp[2], std::sqrt(c44 / r), 1e-10);
+    cmpmc_test::check(n + " [100] v_L", vp[0], std::sqrt(c11 / r), 1e-10);
+    cmpmc_test::check(n + " [100] v_T (FT)", vp[1], std::sqrt(c44 / r), 1e-10);
+    cmpmc_test::check(n + " [100] v_T (ST)", vp[2], std::sqrt(c44 / r), 1e-10);
     exact(C, r, {1, 1, 0}, vg, vp);
-    audit::check(n + " [110] v_L", vp[0], std::sqrt((c11 + c12 + 2 * c44) / (2 * r)), 1e-10);
+    cmpmc_test::check(n + " [110] v_L", vp[0], std::sqrt((c11 + c12 + 2 * c44) / (2 * r)), 1e-10);
     const double a = std::sqrt(c44 / r), b = std::sqrt((c11 - c12) / (2 * r));
-    audit::check(n + " [110] v_FT", vp[1], std::max(a, b), 1e-10);
-    audit::check(n + " [110] v_ST", vp[2], std::min(a, b), 1e-10);
+    cmpmc_test::check(n + " [110] v_FT", vp[1], std::max(a, b), 1e-10);
+    cmpmc_test::check(n + " [110] v_ST", vp[2], std::min(a, b), 1e-10);
     exact(C, r, {1, 1, 1}, vg, vp);
-    audit::check(n + " [111] v_L", vp[0], std::sqrt((c11 + 2 * c12 + 4 * c44) / (3 * r)), 1e-10);
-    audit::check(n + " [111] v_T", vp[1], std::sqrt((c11 - c12 + c44) / (3 * r)), 1e-10);
+    cmpmc_test::check(n + " [111] v_L", vp[0], std::sqrt((c11 + 2 * c12 + 4 * c44) / (3 * r)), 1e-10);
+    cmpmc_test::check(n + " [111] v_T", vp[1], std::sqrt((c11 - c12 + c44) / (3 * r)), 1e-10);
 }
 
 static void run_lut(const CrystalConfig& cfg) {
@@ -66,7 +69,7 @@ static void run_lut(const CrystalConfig& cfg) {
             worst_fd = std::max(worst_fd, (g - vg[m]).norm() / vg[m].norm());
         }
     }
-    audit::check(n + " v_g vs finite-difference grad omega (max rel)", worst_fd, 0.0, 0.0, 1e-5);
+    cmpmc_test::check(n + " v_g vs finite-difference grad omega (max rel)", worst_fd, 0.0, 0.0, 1e-5);
 
     // (c) LUT errors
     for (int which = 0; which < 2; ++which) {
@@ -85,12 +88,12 @@ static void run_lut(const CrystalConfig& cfg) {
             }
             std::sort(ang.begin(), ang.end()); std::sort(mag.begin(), mag.end());
             const std::string tag = n + (which ? " octLUT " : " map_k_to_vg ") + mode_name(static_cast<PhononMode>(m));
-            audit::info(tag + " dir err median (mrad)", ang[NT / 2]);
-            audit::info(tag + " dir err q99 (mrad)", ang[NT * 99 / 100]);
-            audit::info(tag + " dir err max (mrad)", ang.back());
-            audit::info(tag + " |vg| err q99 (rel)", mag[NT * 99 / 100]);
-            audit::info(tag + " fraction dir err > 1 deg", double(nbad) / NT);
-            if (m == 0) audit::check(tag + " q99 dir err < 5 mrad", ang[NT * 99 / 100], 0.0, 0.0, 5.0);
+            cmpmc_test::info(tag + " dir err median (mrad)", ang[NT / 2]);
+            cmpmc_test::info(tag + " dir err q99 (mrad)", ang[NT * 99 / 100]);
+            cmpmc_test::info(tag + " dir err max (mrad)", ang.back());
+            cmpmc_test::info(tag + " |vg| err q99 (rel)", mag[NT * 99 / 100]);
+            cmpmc_test::info(tag + " fraction dir err > 1 deg", double(nbad) / NT);
+            if (m == 0) cmpmc_test::check(tag + " q99 dir err < 5 mrad", ang[NT * 99 / 100], 0.0, 0.0, 5.0);
         }
     }
 }
@@ -104,12 +107,11 @@ static void timing() {
     auto t1 = std::chrono::steady_clock::now();
     for (const auto& k : ks) sink += lat.map_k_to_vg_oct(PhononMode::FT, k).vg_mag;
     auto t2 = std::chrono::steady_clock::now();
-    audit::info("ns per map_k_to_vg call", std::chrono::duration<double, std::nano>(t1 - t0).count() / ks.size());
-    audit::info("ns per map_k_to_vg_oct call", std::chrono::duration<double, std::nano>(t2 - t1).count() / ks.size());
+    cmpmc_test::info("ns per map_k_to_vg call", std::chrono::duration<double, std::nano>(t1 - t0).count() / ks.size());
+    cmpmc_test::info("ns per map_k_to_vg_oct call", std::chrono::duration<double, std::nano>(t2 - t1).count() / ks.size());
     if (sink == 42.0) std::printf("x");
 }
 
-#ifndef CMPMC_AUDIT_REF
 static void exact_mode() {
     CrystalLattice lat(materials::Germanium());
     lat.set_kinematics_mode(CrystalLattice::KinematicsMode::Exact);
@@ -118,14 +120,11 @@ static void exact_mode() {
     for (int t = 0; t < 20000; ++t) { const Vec3 k = rng.isotropic_dir(); Vec3 vg[3]; double vp[3];
         exact(C, lat.config().density, k, vg, vp);
         worst = std::max(worst, (lat.map_k_to_vg(PhononMode::L, k).vg_dir - vg[0].unit()).norm()); }
-    audit::check("Ge Exact kinematics mode max dir err (rad)", worst, 0.0, 0.0, 1e-9);
+    cmpmc_test::check("Ge Exact kinematics mode max dir err (rad)", worst, 0.0, 0.0, 1e-9);
 }
-#endif
 
 int main() {
-#ifndef CMPMC_AUDIT_REF
     exact_mode();
-#endif
     timing();
     std::printf("# test_christoffel\n");
     run_cubic(materials::Germanium());
@@ -134,5 +133,5 @@ int main() {
     run_lut(materials::Germanium());
     run_lut(materials::Silicon());
     run_lut(materials::Sapphire());
-    return audit::result();
+    return cmpmc_test::result();
 }

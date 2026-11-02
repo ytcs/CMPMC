@@ -1,24 +1,30 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 #pragma once
+
+// Built-in material presets: twelve crystals and two superconducting sensor films.
+//
+// Unless a comment states otherwise, phonon and charge constants are the values
+// distributed with G4CMP (CrystalMaps/<material>/config.txt), so that results are
+// directly comparable. Deliberate deviations are documented at the constant and
+// cite their source.
 
 #include "cmpmc/materials/crystal_config.hpp"
 
 namespace cmpmc::materials {
 
-// ============================================================================
-// All 12 Standard G4CMP CrystalMaps Material Presets + Superconducting Films
-// ============================================================================
-
-// 1. Germanium (Ge) - Cubic [CrystalMaps/Ge/config.txt]
+// 1. Germanium (Ge) - Cubic
 inline CrystalConfig Germanium() {
     CrystalConfig c{};
-    // Primary (Debye-energy) phonon frequency: G4CMP config.txt uses 2 THz, which is
-    // below the Ge acoustic band edge; Leman 1109.1193 Table I gives nu_D = 8.64 THz
-    // (campaign WP8-R Table 1.1); 2408.04732 Table 5 max optical 9.02 THz.
+    // Primary (Debye-energy) phonon frequency. G4CMP CrystalMaps uses 2 THz, which is
+    // below the Ge acoustic band edge; Leman, arXiv:1109.1193, Table I gives
+    // nu_D = 8.64 THz (arXiv:2408.04732, Table 5: maximum optical frequency 9.02 THz).
     c.debye_freq = 8.64 * units::THz;
     return c;
 }
 
-// 2. Silicon (Si) - Cubic [CrystalMaps/Si/config.txt]
+// 2. Silicon (Si) - Cubic
 inline CrystalConfig Silicon() {
     CrystalConfig c;
     c.name              = "Si";
@@ -43,8 +49,8 @@ inline CrystalConfig Silicon() {
     c.v_sound           = 9000.0;
     c.v_trans           = 5400.0;
     c.bandgap           = 1.17 * units::eV;
-    // eps_eh and F_eh: campaign values (WP5-v4 Sec. 6.4, from 2004.11499 [FT]:
-    // 3.749 +- 0.001 eV and 0.119 +- 0.002 at 5.9 keV, 123 K). G4CMP config: 3.81, 0.15.
+    // eps_eh and F_eh from arXiv:2004.11499: 3.749 +- 0.001 eV and 0.119 +- 0.002
+    // at 5.9 keV, 123 K (G4CMP CrystalMaps uses 3.81 eV and 0.15).
     c.pair_energy       = 3.749 * units::eV;
     c.fano_factor       = 0.119;
     c.epsilon_rel       = 11.68;
@@ -67,7 +73,7 @@ inline CrystalConfig Silicon() {
     return c;
 }
 
-// 3. Sapphire (Al2O3) - Rhombohedral [CrystalMaps/Al2O3/config.txt]
+// 3. Sapphire (Al2O3) - Rhombohedral
 inline CrystalConfig Sapphire() {
     CrystalConfig c;
     c.name       = "Al2O3";
@@ -100,7 +106,7 @@ inline CrystalConfig Sapphire() {
     return c;
 }
 
-// 4. Calcium Tungstate (CaWO4) - Tetragonal [CrystalMaps/CaWO4/config.txt]
+// 4. Calcium Tungstate (CaWO4) - Tetragonal
 inline CrystalConfig CalciumTungstate() {
     CrystalConfig c;
     c.name       = "CaWO4";
@@ -131,7 +137,7 @@ inline CrystalConfig CalciumTungstate() {
     return c;
 }
 
-// 5. Alpha-Quartz (SiO2_alpha) - Rhombohedral [CrystalMaps/SiO2_alpha/config.txt]
+// 5. Alpha-Quartz (SiO2_alpha) - Rhombohedral
 inline CrystalConfig AlphaQuartz() {
     CrystalConfig c;
     c.name       = "SiO2_alpha";
@@ -162,7 +168,7 @@ inline CrystalConfig AlphaQuartz() {
     return c;
 }
 
-// 6. Amorphous Silica (SiO2_amorph) [CrystalMaps/SiO2_amorph/config.txt]
+// 6. Amorphous Silica (SiO2_amorph)
 inline CrystalConfig AmorphousSilica() {
     CrystalConfig c = AlphaQuartz();
     c.name       = "SiO2_amorph";
@@ -182,7 +188,7 @@ inline CrystalConfig AmorphousSilica() {
     return c;
 }
 
-// 7. Gallium Arsenide (GaAs) - Cubic [CrystalMaps/GaAs/config.txt]
+// 7. Gallium Arsenide (GaAs) - Cubic
 inline CrystalConfig GalliumArsenide() {
     CrystalConfig c = Germanium();
     c.name          = "GaAs";
@@ -197,16 +203,15 @@ inline CrystalConfig GalliumArsenide() {
     c.gamma         = -67.51 * units::GPa;
     c.lambda        =  47.20 * units::GPa;
     c.mu            =  44.20 * units::GPa;
-    // Phonon constants as in G4CMP CrystalMaps/GaAs/config.txt and 2408.04732
-    // Tables 3-5 [FT] (A = 7.77e-55 s^4, F_TT = 0.77, DOS 0.584:0.337:0.078); the
-    // previous values (A = 2.66e-55, F_TT = 0.58, ...) matched neither.
+    // Phonon constants as in arXiv:2408.04732, Tables 3-5 (A = 7.77e-55 s^4,
+    // F_TT = 0.77, DOS 0.584:0.337:0.078), which agree with G4CMP CrystalMaps.
     c.B_iso         = 7.22e-42;
     c.A_anh         = 7.778e-55;
     c.fTT_frac      = 0.778;
     c.fLDOS         = 0.078;
     c.fSTDOS        = 0.584;
     c.fFTDOS        = 0.337;
-    c.debye_freq    = 8.58 * units::THz;   // max optical, 2408.04732 Table 5 (G4CMP: 6.56 = max acoustic)
+    c.debye_freq    = 8.58 * units::THz;   // maximum optical frequency, arXiv:2408.04732, Table 5 (G4CMP CrystalMaps: 6.56 THz, maximum acoustic)
     c.v_sound       = 5130.0;
     c.v_trans       = 3020.0;
     c.bandgap       = 1.519 * units::eV;
@@ -217,7 +222,7 @@ inline CrystalConfig GalliumArsenide() {
     return c;
 }
 
-// 8. Calcium Fluoride (CaF2) - Cubic [CrystalMaps/CaF2/config.txt]
+// 8. Calcium Fluoride (CaF2) - Cubic
 inline CrystalConfig CalciumFluoride() {
     CrystalConfig c;
     c.name       = "CaF2";
@@ -244,7 +249,7 @@ inline CrystalConfig CalciumFluoride() {
     return c;
 }
 
-// 9. Lithium Fluoride (LiF) - Cubic [CrystalMaps/LiF/config.txt]
+// 9. Lithium Fluoride (LiF) - Cubic
 inline CrystalConfig LithiumFluoride() {
     CrystalConfig c;
     c.name       = "LiF";
@@ -271,7 +276,7 @@ inline CrystalConfig LithiumFluoride() {
     return c;
 }
 
-// 10. Aluminum Bulk Crystal / 3D Superconductor (Al) [CrystalMaps/Al/config.txt]
+// 10. Aluminum Bulk Crystal / 3D Superconductor (Al)
 inline CrystalConfig AluminumCrystal() {
     CrystalConfig c;
     c.name         = "Al";
@@ -303,7 +308,7 @@ inline CrystalConfig AluminumCrystal() {
     return c;
 }
 
-// 11. Niobium Bulk Crystal / 3D Superconductor (Nb) [CrystalMaps/Nb/config.txt]
+// 11. Niobium Bulk Crystal / 3D Superconductor (Nb)
 inline CrystalConfig NiobiumCrystal() {
     CrystalConfig c;
     c.name         = "Nb";
@@ -335,7 +340,7 @@ inline CrystalConfig NiobiumCrystal() {
     return c;
 }
 
-// 12. Copper (Cu) - Amorphous [CrystalMaps/Cu/config.txt]
+// 12. Copper (Cu) - Amorphous
 inline CrystalConfig Copper() {
     CrystalConfig c = AmorphousSilica();
     c.name       = "Cu";
@@ -350,11 +355,13 @@ inline CrystalConfig Copper() {
     return c;
 }
 
-// Thin-Film Superconducting Sensors
+// Thin-film superconducting sensors.
+// Aluminium QET film with the default SuperconductorFilmConfig parameters.
 inline constexpr SuperconductorFilmConfig AluminumFilm() noexcept {
     return SuperconductorFilmConfig{};
 }
 
+// Tungsten transition-edge-sensor film.
 inline constexpr SuperconductorFilmConfig TungstenTES() noexcept {
     SuperconductorFilmConfig f{};
     f.film_absorption       = 1.0;

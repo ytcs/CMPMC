@@ -39,3 +39,12 @@ jobs:
           cmake -S "$RUNNER_TEMP/consumer" -B "$RUNNER_TEMP/consumer/build" -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/cmpmc"
           cmake --build "$RUNNER_TEMP/consumer/build"
           "$RUNNER_TEMP/consumer/build/consumer"
+
+  thread-sanitizer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the multi-threading test under ThreadSanitizer
+        run: |
+          g++ -std=c++20 -O1 -g -fsanitize=thread -Iinclude -Itests tests/test_parallel.cpp -o test_parallel_tsan -pthread
+          TSAN_OPTIONS=halt_on_error=1 ./test_parallel_tsan

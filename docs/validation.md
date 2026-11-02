@@ -43,6 +43,7 @@ says otherwise.
 | Isotropic AMM / DMM interface transmission, `SurfaceProperty::amm_interface` | `test_interface_amm` | Energy-flux conservation R + T = 1 (not imposed by the solver); 4Z₁Z₂/(Z₁+Z₂)² at normal incidence; identical media; SH and P-SV reciprocity; independently computed reference table (24 entries); DMM detailed balance | 1e-10; 1e-12; 1e-12; 1e-10; 6e-4 abs; 1e-14 | validated, opt-in (ideal interface, an upper bound on transmission) |
 | Prompt phonons (Debye line, DOS mode mix) | `test_fano_partition` | Energy bookkeeping of the partition | 1e-15 | validated as bookkeeping (no created-phonon spectrum, see [limitations.md](limitations.md)) |
 | Engine energy closure, phonon run | `test_engine_energy_closure` | deposited + escaped = injected | 1e-9 | validated |
+| Multi-threaded event loop (`run_events`) | `test_parallel` | Bit-identical statistics and hits for 1–4 threads; same steps, hits and energy as a serial loop; energy closure; worker exceptions rethrown | exact; 1e-12; 1e-9 | validated |
 
 ## Superconducting films
 

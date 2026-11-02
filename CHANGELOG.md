@@ -57,6 +57,12 @@ breaking changes.
 - The `UnvalidatedModuleError` message now points to `docs/validation.md`.
 
 ### Added
+- `cmpmc::run_events` (`transport/parallel.hpp`): a multi-threaded event loop.
+  Results are bit-identical for any thread count, using per-event random streams
+  (`Rng::for_stream`) and ordered merging. The event's hits are available through
+  `hit_offsets`, and exceptions are propagated to the caller. Tested by `test_parallel`.
+- Multi-core results in the G4CMP comparison: 15–94× more throughput on all cores
+  of the same machine.
 - The project is licensed under GPL-3.0-or-later (`LICENSE`), matching G4CMP, from
   which parts of the code and data are derived (`NOTICE`). SPDX identifiers are added to
   all source files.

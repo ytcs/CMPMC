@@ -36,3 +36,4 @@
 #include "cmpmc/transport/excitation_model.hpp"
 #include "cmpmc/transport/variance_reduction.hpp"
 #include "cmpmc/transport/engine.hpp"
+#include "cmpmc/transport/parallel.hpp"

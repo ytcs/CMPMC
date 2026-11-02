@@ -29,6 +29,7 @@ set(CMPMC_TESTS
     "test_fano_partition|charge,validation"
     "test_engine_energy_closure|transport,unit"
     "test_guards|transport,unit"
+    "test_parallel|transport,unit"
 )
 
 foreach(entry IN LISTS CMPMC_TESTS)

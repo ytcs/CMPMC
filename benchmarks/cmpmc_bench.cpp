@@ -8,12 +8,14 @@
 // half-height 1.27 cm, Al Kaplan films on both faces (film entry probability 0.2
 // per sensor hit, otherwise reflection), the example's polynomial reflection model
 // on every surface, and G4CMP's
-// default limit of 100 surface bounces per phonon. Single thread; the timed
+// default limit of 100 surface bounces per phonon. Events run through
+// cmpmc::run_events (single thread unless a thread count is given); the timed
 // region is transport only.
 //
-// Usage: cmpmc_bench <mode> <events> [seed] [voltage_V] [kinematics]
+// Usage: cmpmc_bench <mode> <events> [seed] [voltage_V] [kinematics] [threads]
 //   mode       phonon | charge | chargefull (as in g4cmp_bench)
 //   kinematics octahedral (default) | bilinear | exact
+//   threads    1 (default); 0 = all hardware threads
 
 #include "cmpmc/cmpmc.hpp"
 
@@ -21,13 +23,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string>
-#include <vector>
 
 using namespace cmpmc;
 
 int main(int argc, char** argv) {
     if (argc < 3) {
-        std::fprintf(stderr, "usage: %s phonon|charge|chargefull <events> [seed] [voltage_V] [kinematics]\n", argv[0]);
+        std::fprintf(stderr, "usage: %s phonon|charge|chargefull <events> [seed] [voltage_V] [kinematics] [threads]\n", argv[0]);
         return 2;
     }
     const std::string mode = argv[1];
@@ -35,6 +36,7 @@ int main(int argc, char** argv) {
     const unsigned long long seed = argc > 3 ? std::strtoull(argv[3], nullptr, 10) : 12345ULL;
     const double voltage = argc > 4 ? std::atof(argv[4]) : 4.0;
     const std::string kin = argc > 5 ? argv[5] : "octahedral";
+    const unsigned threads = argc > 6 ? static_cast<unsigned>(std::atoi(argv[6])) : 1;  // 0 = all cores
 
     const auto t0 = std::chrono::steady_clock::now();
     CrystalLattice lattice(materials::Germanium());
@@ -55,43 +57,38 @@ int main(int argc, char** argv) {
 
     const SimulationEngine engine(lattice, det);
     const ChargePhysics charges(lattice);
-    Rng rng(seed);
+    const size_t n_valleys = lattice.config().valley_dirs.size();
     const auto t1 = std::chrono::steady_clock::now();
 
-    SimStats stats;
-    std::vector<SensorHit> hits;
-    std::vector<PhononTrack> phonons;
-    std::vector<ChargeTrack> carriers;
-    unsigned long long primaries = 0;
-    const size_t n_valleys = lattice.config().valley_dirs.size();
-
-    for (int ev = 0; ev < events; ++ev) {
+    auto generate = [&](EventInput& in) {
         if (mode == "phonon") {
-            const double u = rng.uniform();
+            const double u = in.rng.uniform();
             const PhononMode m = u < 0.53539 ? PhononMode::ST : u < 0.90217 ? PhononMode::FT : PhononMode::L;
-            phonons.push_back(engine.make_track({0, 0, 0}, rng.isotropic_dir(), m, 7.5e-3));
-            stats.total_injected_eV += 7.5e-3;
-            engine.transport(phonons, hits, stats, rng);
-            ++primaries;
+            in.phonons.push_back(engine.make_track({0, 0, 0}, in.rng.isotropic_dir(), m, 7.5e-3));
+            in.injected_eV += 7.5e-3;
         } else {
-            const auto valley = static_cast<uint16_t>(rng.uniform() * n_valleys) % n_valleys;
-            carriers.push_back(charges.make_charge(ExcitationType::Electron, {0, 0, 0}, rng.isotropic_dir(), 1e-6, valley));
-            carriers.push_back(charges.make_charge(ExcitationType::Hole, {0, 0, 0}, rng.isotropic_dir(), 1e-6, 0));
-            engine.transport_charges(carriers, phonons, hits, stats, rng);
-            primaries += 2;
-            if (!phonons.empty()) engine.transport(phonons, hits, stats, rng);
+            const auto valley = static_cast<uint16_t>(in.rng.uniform() * n_valleys) % n_valleys;
+            in.charges.push_back(charges.make_charge(ExcitationType::Electron, {0, 0, 0}, in.rng.isotropic_dir(), 1e-6, valley));
+            in.charges.push_back(charges.make_charge(ExcitationType::Hole, {0, 0, 0}, in.rng.isotropic_dir(), 1e-6, 0));
         }
-    }
-    const auto t2 = std::chrono::steady_clock::now();
+    };
+    RunOptions options;
+    options.threads = threads;
+    options.seed = seed;
+    options.events_per_chunk = mode == "phonon" ? 64 : 1;
+    options.keep_hits = false;
+    const RunResult run = run_events(engine, static_cast<uint64_t>(events), generate, options);
+    const SimStats& stats = run.stats;
 
     const double init_s = std::chrono::duration<double>(t1 - t0).count();
-    const double run_s = std::chrono::duration<double>(t2 - t1).count();
-    std::printf("code=CMPMC mode=%s kinematics=%s events=%d init_s=%.3f run_s=%.3f us_per_event=%.1f "
-                "steps=%llu phonon_steps=%llu charge_steps=%llu primaries=%llu edep_eV=%.6f luke_phonons=%llu\n",
-                mode.c_str(), kin.c_str(), events, init_s, run_s, 1e6 * run_s / events,
+    const double run_s = run.wall_seconds;
+    std::printf("code=CMPMC mode=%s kinematics=%s threads=%u events=%d init_s=%.3f run_s=%.3f us_per_event=%.1f "
+                "events_per_s=%.2f steps=%llu phonon_steps=%llu charge_steps=%llu edep_eV=%.6f luke_phonons=%llu\n",
+                mode.c_str(), kin.c_str(), run.threads_used, events, init_s, run_s, 1e6 * run_s / events,
+                events / run_s,
                 static_cast<unsigned long long>(stats.total_steps + stats.charge_steps),
                 static_cast<unsigned long long>(stats.total_steps),
-                static_cast<unsigned long long>(stats.charge_steps), primaries, stats.total_deposited_eV,
+                static_cast<unsigned long long>(stats.charge_steps), stats.total_deposited_eV,
                 static_cast<unsigned long long>(stats.luke_phonons_emitted));
     return 0;
 }

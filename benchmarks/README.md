@@ -1,14 +1,15 @@
 # CMPMC vs. G4CMP speed comparison
 
 This directory holds two small programs that run the same workloads, one on CMPMC and
-one on G4CMP. Both programs are single-threaded, write nothing to disk, and time only
-the transport (initialisation is reported separately, at about 0.08 s for both).
+one on G4CMP. Neither program writes to disk, and both time only the transport
+(initialisation is reported separately, at about 0.08 s for both). Results are given
+for a single thread and for all cores.
 
 | File | Contents |
 |---|---|
 | `cmpmc_bench.cpp` | CMPMC side. Built with `-DCMPMC_BUILD_BENCHMARKS=ON`. |
 | `g4cmp/g4cmp_bench.cc`, `g4cmp/CMakeLists.txt` | G4CMP side. A standalone CMake project that needs Geant4 and G4CMP. |
-| `run_comparison.py` | Runs both programs with several seeds and prints the results table. |
+| `run_comparison.py` | Runs both programs (single thread with several seeds, then all cores) and prints the results tables. |
 
 ## Workloads
 
@@ -42,19 +43,37 @@ Several settings were aligned so that both codes do the same work:
 
 ## Results
 
-Measured on 2026-11-02 on an Intel Xeon at 2.10 GHz, single thread, with GCC 13.3 at
-`-O3` for both codes. The versions were Geant4 11.2.2, G4CMP `09b04bc` (release
-V10-06-00) and CMPMC 0.1.0. Each entry is the mean ± standard deviation over 3 seeds.
+Measured on 2026-11-02 on a 4-core Intel Xeon at 2.10 GHz, with GCC 13.3 at `-O3` for
+both codes. The versions were Geant4 11.2.2, G4CMP `09b04bc` (release V10-06-00) and
+CMPMC 0.1.0.
+
+### Single thread (mean ± standard deviation over 3 seeds)
 
 | Workload | Code | Time per event | Speed-up | Deposited energy per event | Luke phonons per pair |
 |---|---|---|---|---|---|
-| phonon (2000 events) | G4CMP | 9.03 ± 0.6 ms | 1× | 6.7 meV | – |
-| | CMPMC, octahedral table | 0.581 ± 0.012 ms | **16×** | 6.7 meV | – |
-| | CMPMC, bilinear table | 0.819 ± 0.016 ms | **11×** | 6.7 meV | – |
-| charge (50 events) | G4CMP | 367 ± 5 ms | 1× | see note | – |
-| | CMPMC | 4.78 ± 0.2 ms | **77×** | see note | 3777 (emission rate only) |
-| chargefull (5 events) | G4CMP | 3.75 ± 0.19 s | 1× | 4.304 ± 0.006 eV | 3838 |
-| | CMPMC | 0.164 ± 0.032 s | **23×** | 4.287 ± 0.003 eV | 3770 |
+| phonon (2000 events) | G4CMP | 9.85 ± 0.5 ms | 1× | 6.7 meV | – |
+| | CMPMC, octahedral table | 0.581 ± 0.019 ms | **17×** | 6.7 meV | – |
+| | CMPMC, bilinear table | 0.842 ± 0.014 ms | **12×** | 6.7 meV | – |
+| charge (50 events) | G4CMP | 402 ± 28 ms | 1× | see note | – |
+| | CMPMC | 5.15 ± 0.52 ms | **78×** | see note | 3769 (emission rate only) |
+| chargefull (5 events) | G4CMP | 4.0 ± 0.25 s | 1× | 4.304 ± 0.006 eV | 3838 |
+| | CMPMC | 0.142 ± 0.016 s | **28×** | 4.285 ± 0.002 eV | 3773 |
+
+### All 4 cores (throughput)
+
+- **CMPMC** runs one process with 4 threads through `cmpmc::run_events`.
+- **G4CMP** runs 4 independent processes at once, each simulating a quarter of the
+  events with its own seed. This is G4CMP's best case: it has no threading overhead and
+  scales ideally (measured 4.0×), so it is the conservative comparison for CMPMC.
+
+| Workload | G4CMP (4 processes) | CMPMC (4 threads) | Speed-up | CMPMC scaling vs 1 thread |
+|---|---|---|---|---|
+| phonon | 409 events/s | 6,190 events/s | **15×** | 3.89× |
+| charge | 9.76 events/s | 915 events/s | **94×** | 3.89× |
+| chargefull | 0.98 events/s | 29.1 events/s | **30×** | 4.05× |
+
+Single-thread speed-ups vary by a few percent between sessions (17× here, 16× in an
+earlier run of the same harness), which reflects normal timing noise on a shared machine.
 
 **Physics agreement.** Both codes deposit the same energy in the phonon workload, to
 within the printed precision. In `chargefull`, deposited energy agrees to 0.4 % and the
@@ -77,9 +96,10 @@ timing, and both codes agree when the phonons are tracked (`chargefull`).
 - *Overall.* Tracking Luke phonons dominates `chargefull`, so its speed-up falls between
   the phonon and charge figures.
 
-These are single-thread numbers. Both codes run in parallel over events (G4CMP
-through Geant4's multithreading, CMPMC through one engine per thread), so the
-ratio should carry over to a multi-core CPU.
+**Multi-core.** Both codes parallelise over events and scale almost linearly on this
+machine, so the single-thread ratios carry over to all cores. CMPMC's `run_events`
+gives bit-identical results for any thread count; each event draws from its own
+random stream.
 
 ## Reproducing
 
@@ -95,7 +115,7 @@ cmake -S benchmarks/g4cmp -B g4bench-build -DCMAKE_BUILD_TYPE=Release \
       -DGeant4_DIR=$PWD/g4/lib/cmake/Geant4 -DG4CMP_DIR=$PWD/g4cmp && cmake --build g4bench-build
 cmake -B cmpmc-build -DCMPMC_BUILD_BENCHMARKS=ON && cmake --build cmpmc-build --target cmpmc_bench
 
-# 3. Run
+# 3. Run (single thread, then all cores; --cores defaults to the machine's core count)
 export G4LATTICEDATA=$PWD/G4CMP/CrystalMaps G4ENSDFSTATEDATA=<path>/G4ENSDFSTATE2.3
 export LD_LIBRARY_PATH=$PWD/g4/lib:$PWD/g4cmp/lib
 python3 benchmarks/run_comparison.py --cmpmc cmpmc-build/cmpmc_bench --g4cmp g4bench-build/g4cmp_bench

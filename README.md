@@ -9,8 +9,9 @@ CMPMC takes an energy deposit, splits it into electron-hole pairs and phonons, a
 transports every excitation through an anisotropic crystal until it is absorbed. The
 result is the sensor hits (position, time, energy, channel) plus a full energy
 ledger. The physics follows G4CMP and the published literature, but CMPMC runs
-without Geant4 and is **11–77× faster than G4CMP** on the same workloads
-([benchmark](#performance)).
+without Geant4, is **15–94× faster than G4CMP** on the same workloads using all cores
+of the same machine, and scales almost linearly across threads with bit-reproducible
+results ([benchmark](#performance)).
 
 - **No dependencies.** The library needs only a C++20 compiler and the standard
   library. It has no Geant4, ROOT or CLHEP requirement.
@@ -36,25 +37,28 @@ without Geant4 and is **11–77× faster than G4CMP** on the same workloads
 
 ## Performance
 
-Single-thread wall time per event against G4CMP V10-06-00 on Geant4 11.2.2. Both
-programs run the detector of G4CMP's `examples/phonon`: a Ge cylinder of radius
-3.81 cm and half-height 1.27 cm with Al Kaplan sensor films on both faces.
+Measured against G4CMP V10-06-00 on Geant4 11.2.2. Both programs run the detector of
+G4CMP's `examples/phonon`: a Ge cylinder of radius 3.81 cm and half-height 1.27 cm with
+Al Kaplan sensor films on both faces. The machine was a 4-core Intel Xeon at 2.10 GHz.
 
-| Workload | G4CMP | CMPMC | Speed-up |
-|---|---|---|---|
-| 7.5 meV phonon, tracked to absorption | 9.03 ms | 0.58 ms | **16×** (11× with the same (θ, φ) table type) |
-| e⁻/h⁺ pair drifted at 4 V, no Luke-phonon tracking | 367 ms | 4.8 ms | **77×** |
-| e⁻/h⁺ pair at 4 V with all ~3,800 Luke phonons tracked | 3.75 s | 0.16 s | **23×** |
+| Workload | Single thread: G4CMP | Single thread: CMPMC | Speed-up | All 4 cores: G4CMP | All 4 cores: CMPMC | Speed-up |
+|---|---|---|---|---|---|---|
+| 7.5 meV phonon, tracked to absorption | 9.85 ms/event | 0.58 ms/event | **17×** | 409 events/s | 6,190 events/s | **15×** |
+| e⁻/h⁺ pair drifted at 4 V, no Luke-phonon tracking | 402 ms/event | 5.2 ms/event | **78×** | 9.8 events/s | 915 events/s | **94×** |
+| e⁻/h⁺ pair at 4 V with all ~3,800 Luke phonons tracked | 4.0 s/event | 0.14 s/event | **28×** | 0.98 events/s | 29.1 events/s | **30×** |
+
+On all cores, CMPMC runs one process with 4 threads (`cmpmc::run_events`) and
+G4CMP runs 4 independent processes, which is G4CMP's ideal-scaling best case. CMPMC
+scales 3.9–4.05× from 1 to 4 threads.
 
 The two codes agree on the physics they compute. Deposited energy matches to 0.4 %
 and the Luke phonon count per pair to 1.8 %. Most of the gain comes from cheaper
 steps: CMPMC has no Geant4 stepping or navigation layer and samples from lookup
 tables rather than with rejection loops. Its charge step control also takes about 3×
-fewer steps per carrier. Both codes parallelise over events, so the ratios apply per
-core.
+fewer steps per carrier.
 
-These are CPU figures. CMPMC does not yet have a GPU backend; the wavefront engines
-under `cmpmc/experimental/` are CPU prototypes of that design. The setup, the
+These are CPU figures. CMPMC does not yet have a GPU backend; a CUDA backend is
+planned in [issue #1](https://github.com/ytcs/CMPMC/issues/1). The setup, the
 alignment of the two configurations, and the reproduction steps are in
 [benchmarks/README.md](benchmarks/README.md).
 
@@ -86,6 +90,24 @@ int main() {
     SimStats stats;
     engine.transport(phonons, hits, stats, rng);
 }
+```
+
+### Running many events on all cores
+
+`cmpmc::run_events` distributes events over threads. Results are bit-identical for
+any thread count, because event *i* always draws from the random stream
+`Rng::for_stream(seed, i)`.
+
+```cpp
+RunOptions options;
+options.threads = 0;          // all hardware threads
+options.seed    = 42;
+const RunResult run = run_events(engine, 100000, [&](EventInput& ev) {
+    ev.phonons.push_back(engine.make_track({0, 0, 0}, ev.rng.isotropic_dir(),
+                                           PhononMode::L, lattice.debye_energy()));
+    ev.injected_eV += lattice.debye_energy();
+}, options);
+// run.stats: summed statistics; run.hits with run.hit_offsets: the hits of each event
 ```
 
 ### Using CMPMC from another CMake project

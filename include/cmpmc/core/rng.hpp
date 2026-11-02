@@ -28,6 +28,20 @@ struct Rng {
         }
     }
 
+    // Independent generator for stream `stream` of a run seeded with `seed` (for
+    // example one stream per event). Depends only on (seed, stream), so results
+    // do not depend on how events are distributed over threads.
+    static constexpr Rng for_stream(uint64_t seed, uint64_t stream) noexcept {
+        return Rng(mix64(seed) ^ mix64(stream + 0x632be59bd9b4e019ULL));
+    }
+
+    static constexpr uint64_t mix64(uint64_t x) noexcept {
+        x += 0x9e3779b97f4a7c15ULL;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        return x ^ (x >> 31);
+    }
+
     static constexpr uint64_t rotl(uint64_t x, int k) noexcept {
         return (x << k) | (x >> (64 - k));
     }

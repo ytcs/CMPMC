@@ -25,7 +25,7 @@ include/cmpmc/
 ├── geometry/                 analytic solids, surface properties, FEM field meshes,
 │                             patterned electrode masks
 ├── transport/                SimulationEngine and DetectorModel, the ExcitationModel
-│                             concept, Russian roulette
+│                             concept, Russian roulette, multi-threaded run_events
 └── experimental/             SoA and wavefront engines, jump-to-ballistic,
                               next-event estimation (not in cmpmc.hpp)
 ```
@@ -79,11 +79,35 @@ this to 1e-9 for phonon runs and 1e-12 for film cascades.
 
 ## Threading
 
-The engine, the lattice and the detector are immutable during transport. To run in
-parallel, give each thread its own `Rng`, track stack, hit vector and `SimStats`, and
-merge them afterwards. `SimStats` has `operator+=` for this. `examples/phonon_benchmark.cpp`
-shows the pattern with `std::thread`. The FEM mesh field keeps a `thread_local`
-cell-location cache, so concurrent lookups are safe.
+`transport/parallel.hpp` provides `run_events(engine, n_events, generator, options)`.
+The engine, the lattice and the detector are immutable during transport and are shared
+read-only by all workers. For each event, the generator fills the initial phonon and
+charge stacks. The runner then transports the charges first (their Luke phonons join
+the phonon stack), followed by the phonons.
+
+**Reproducibility contract**
+
+- Event *i* draws all of its random numbers from `Rng::for_stream(seed, i)`.
+- Events are grouped into chunks of `events_per_chunk` consecutive events, which threads
+  pull from an atomic counter.
+- Chunk results are merged in chunk order.
+
+As a result, statistics and the hit list (ordered by event, with `hit_offsets`
+marking the boundaries) are bit-identical for any thread count. `test_parallel` checks
+this for 1–4 threads. A different `seed` gives a statistically independent run.
+Changing `events_per_chunk` keeps every event identical but changes the
+floating-point summation order, and with it the last bits of the summed energies.
+
+**Generator rules.** The generator runs concurrently on several threads. It must take
+its randomness from `EventInput::rng`, and it must not modify shared state without
+synchronisation.
+
+**Errors and memory.** An exception thrown in a worker (for example
+`UnvalidatedModuleError`) stops the remaining work and is rethrown on the calling
+thread. Set `keep_hits = false` for statistics-only runs that do not store hits.
+
+**Per-thread state.** The FEM mesh field keeps a `thread_local` cell-location cache, so
+concurrent field lookups are safe.
 
 ## Performance design
 

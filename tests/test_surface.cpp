@@ -6,8 +6,8 @@
 //  (b) engine-level: fraction of surface events that are surface down-conversions,
 //      and energy conservation of that channel;
 //  (c) R16: default surfaces are diffuse with p_anh = 0, and the demo set is guarded.
-#include "audit_common.hpp"
-#include "cmpmc/engine.hpp"
+#include "test_support.hpp"
+#include "cmpmc/transport/engine.hpp"
 
 using namespace cmpmc;
 
@@ -23,7 +23,7 @@ static G4Split g4cmp(const SurfaceProperty& sp, double specProb, double f) {
 
 int main() {
     std::printf("# test_surface\n");
-    const SurfaceProperty sp = SurfaceProperty::g4cmp_demo_bare_wall_surface();
+    const SurfaceProperty sp = SurfaceProperty::demo_polynomial_bare_surface();
     for (double f : {100.0, 300.0, 400.0, 500.0, 600.0, 1000.0}) {
         const double E = f * units::GHz * units::h_Planck;
         const G4Split g = g4cmp(sp, 0.0, f);
@@ -33,8 +33,8 @@ int main() {
 #else
         const auto sl = sp.reflection_split(E); const double ps = sl.p_spec, pa = sl.p_anh;
 #endif
-        audit::check(t + "p_spec vs G4CMP", ps, g.s, 1e-9, 1e-9);
-        audit::check(t + "p_anh  vs G4CMP", pa, g.a, 1e-9, 1e-9);
+        cmpmc_test::check(t + "p_spec vs G4CMP", ps, g.s, 1e-9, 1e-9);
+        cmpmc_test::check(t + "p_anh  vs G4CMP", pa, g.a, 1e-9, 1e-9);
     }
 #ifndef CMPMC_AUDIT_REF
     // engine-level: bare box, no bulk scattering, all faces bare walls
@@ -42,7 +42,7 @@ int main() {
     const CrystalLattice lat(c);
     DetectorModel det; det.max_bounces = 1; det.min_phonon_eV = 0.0;
     det.allow_unvalidated = true;   // the demo coefficients are guarded (R16)
-    for (auto& s : det.surfaces) s = SurfaceProperty::g4cmp_demo_bare_wall_surface();
+    for (auto& s : det.surfaces) s = SurfaceProperty::demo_polynomial_bare_surface();
     const SimulationEngine eng(lat, det);
     Rng rng(9);
     const double f = 450.0, E = f * units::GHz * units::h_Planck;
@@ -50,23 +50,23 @@ int main() {
     const int N = 200000;
     for (int i = 0; i < N; ++i) st.push_back(eng.make_track({0, 0, 0}, rng.isotropic_dir(), PhononMode::FT, E));
     eng.transport(st, hits, S, rng);
-    audit::check("engine: surface down-conversion fraction at 450 GHz", double(S.surface_downconversions) / N,
+    cmpmc_test::check("engine: surface down-conversion fraction at 450 GHz", double(S.surface_downconversions) / N,
                  g4cmp(det.surfaces[0], 0.0, f).a, 0.02);
-    audit::check("engine: energy accounted (killed/escaped == injected)", S.escaped_or_killed_eV, N * E, 1e-9);
+    cmpmc_test::check("engine: energy accounted (killed/escaped == injected)", S.escaped_or_killed_eV, N * E, 1e-9);
     // (c) R16 campaign defaults: fully diffuse, no surface down-conversion (1109.1193 Sec. IV.G [FT]),
     //     and the demo coefficients are refused without opt-in
     const DetectorModel dflt;
     for (double fq : {100.0, 300.0, 450.0, 600.0, 2000.0}) {
         for (size_t k = 0; k < dflt.surfaces.size(); ++k) {
             const auto sl = dflt.surfaces[k].reflection_split(fq * units::GHz * units::h_Planck);
-            audit::check("default surface " + std::to_string(k) + " f=" + std::to_string(int(fq)) + " p_diff", sl.p_diff, 1.0, 0.0, 1e-15);
-            audit::check("default surface " + std::to_string(k) + " f=" + std::to_string(int(fq)) + " p_anh", sl.p_anh, 0.0, 0.0, 0.0);
+            cmpmc_test::check("default surface " + std::to_string(k) + " f=" + std::to_string(int(fq)) + " p_diff", sl.p_diff, 1.0, 0.0, 1e-15);
+            cmpmc_test::check("default surface " + std::to_string(k) + " f=" + std::to_string(int(fq)) + " p_anh", sl.p_anh, 0.0, 0.0, 0.0);
         }
     }
     bool threw = false;
-    try { DetectorModel d2; d2.surfaces[0] = SurfaceProperty::g4cmp_demo_al_sensor_surface(); const SimulationEngine e2(lat, d2); }
+    try { DetectorModel d2; d2.surfaces[0] = SurfaceProperty::demo_polynomial_sensor_surface(); const SimulationEngine e2(lat, d2); }
     catch (const UnvalidatedModuleError&) { threw = true; }
-    audit::check("demo surface refused without allow_unvalidated", threw ? 1.0 : 0.0, 1.0, 0.0);
+    cmpmc_test::check("demo surface refused without allow_unvalidated", threw ? 1.0 : 0.0, 1.0, 0.0);
 #endif
-    return audit::result();
+    return cmpmc_test::result();
 }

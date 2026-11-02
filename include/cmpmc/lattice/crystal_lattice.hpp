@@ -1,12 +1,12 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
-#include "cmpmc/materials/config_reader.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/io/g4cmp_config_import.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
-#include "cmpmc/physics/charge_physics.hpp"
-#include "cmpmc/physics/phonon_physics.hpp"
-#include "cmpmc/physics/superconductor_3d.hpp"
+#include "cmpmc/charge/charge_kernels.hpp"
+#include "cmpmc/phonon/phonon_kernels.hpp"
+#include "cmpmc/superconductor/bulk_superconductor.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -56,7 +56,7 @@ public:
     static Config silicon_config()   { return materials::Silicon(); }
 
     const Config& config() const noexcept { return cfg_; }
-    const physics::Superconductor3D& superconductor() const noexcept { return sc_3d_; }
+    const physics::BulkSuperconductor& superconductor() const noexcept { return sc_3d_; }
     double debye_energy() const noexcept { return cfg_.debye_freq * units::h_Planck; }
 
     // Kinematics query: wavevector k_dir -> (vg_dir, vg_mag).
@@ -301,7 +301,7 @@ private:
     std::vector<OctLutEntry> vg_oct_lut_;
     std::array<double, N_CDF> cdf_lt_{};
     std::array<double, N_CDF> cdf_tt_{};
-    physics::Superconductor3D sc_3d_;
+    physics::BulkSuperconductor sc_3d_;
     KinematicsMode kin_mode_ = KinematicsMode::Octahedral;
 
     inline const Vec3& lut_at(int m, int i, int j) const noexcept {

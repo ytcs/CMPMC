@@ -11,8 +11,8 @@
 //      Table I [FT]; Al2O3: 2408.04732 Table 3 [FT] + AFLOW rho [DB]; W, Ti: AFLOW [DB]; Al, Ir:
 //      moduli [UNVERIFIED], test inputs only), to the table's 3 printed digits (0.0006);
 //  (f) DMM detailed balance t_12 + t_21 = 1.
-#include "audit_common.hpp"
-#include "cmpmc/physics/interface_transmission.hpp"
+#include "test_support.hpp"
+#include "cmpmc/phonon/interface_transmission.hpp"
 #include <string>
 #include <vector>
 
@@ -44,26 +44,26 @@ int main() {
             worst = std::max(worst, std::abs(amm_psv(pr.f, pr.s, true, th).sum() - 1.0));
             worst = std::max(worst, std::abs(amm_psv(pr.f, pr.s, false, th).sum() - 1.0));
         }
-        audit::check(n + " max |R+T-1| over angles, P & SV, both sides", worst, 0.0, 0.0, 1e-10);
+        cmpmc_test::check(n + " max |R+T-1| over angles, P & SV, both sides", worst, 0.0, 0.0, 1e-10);
         // (b)
         const auto P0 = amm_psv(pr.s, pr.f, true, 0.0), S0 = amm_psv(pr.s, pr.f, false, 0.0);
-        audit::check(n + " 4x4 P normal vs 4Z1Z2/(Z1+Z2)^2", P0.T_P, amm_normal(pr.s.rho * pr.s.vL, pr.f.rho * pr.f.vL), 1e-12);
-        audit::check(n + " 4x4 SV normal vs 4Z1Z2/(Z1+Z2)^2", S0.T_S, amm_normal(pr.s.rho * pr.s.vT, pr.f.rho * pr.f.vT), 1e-12);
-        audit::check(n + " no conversion at normal incidence", P0.T_S + P0.R_S + S0.T_P + S0.R_P, 0.0, 0.0, 1e-14);
+        cmpmc_test::check(n + " 4x4 P normal vs 4Z1Z2/(Z1+Z2)^2", P0.T_P, amm_normal(pr.s.rho * pr.s.vL, pr.f.rho * pr.f.vL), 1e-12);
+        cmpmc_test::check(n + " 4x4 SV normal vs 4Z1Z2/(Z1+Z2)^2", S0.T_S, amm_normal(pr.s.rho * pr.s.vT, pr.f.rho * pr.f.vT), 1e-12);
+        cmpmc_test::check(n + " no conversion at normal incidence", P0.T_S + P0.R_S + S0.T_P + S0.R_P, 0.0, 0.0, 1e-14);
         // (e)
         double sh = 0.0; const int NA = 20000;
         for (int i = 0; i < NA; ++i) { const double th = (i + 0.5) / NA * 1.5707963267948966;
             sh += amm_sh(pr.s, pr.f, th) * 2 * std::sin(th) * std::cos(th); }
         sh *= 1.5707963267948966 / NA;
-        audit::check(n + " AMM L normal vs WP8-R 3.2", P0.T_P, pr.L, 0.0, 6e-4);
-        audit::check(n + " AMM T normal vs WP8-R 3.2", S0.T_S, pr.T, 0.0, 6e-4);
-        audit::check(n + " AMM SH flux avg vs WP8-R 3.2", sh, pr.SH, 0.0, 6e-4);
-        audit::check(n + " DMM vs WP8-R 3.2", dmm(pr.s, pr.f), pr.D, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM L normal vs WP8-R 3.2", P0.T_P, pr.L, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM T normal vs WP8-R 3.2", S0.T_S, pr.T, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM SH flux avg vs WP8-R 3.2", sh, pr.SH, 0.0, 6e-4);
+        cmpmc_test::check(n + " DMM vs WP8-R 3.2", dmm(pr.s, pr.f), pr.D, 0.0, 6e-4);
         // (f)
-        audit::check(n + " DMM t12 + t21", dmm(pr.s, pr.f) + dmm(pr.f, pr.s), 1.0, 1e-14);
+        cmpmc_test::check(n + " DMM t12 + t21", dmm(pr.s, pr.f) + dmm(pr.f, pr.s), 1.0, 1e-14);
         const IsotropicAMMInterface I{pr.s, pr.f};
-        audit::info(n + " engine AMM flux-avg t_L (P-SV, oblique)", I.flux_average(true));
-        audit::info(n + " engine AMM flux-avg t_T ((SV+SH)/2)", I.flux_average(false));
+        cmpmc_test::info(n + " engine AMM flux-avg t_L (P-SV, oblique)", I.flux_average(true));
+        cmpmc_test::info(n + " engine AMM flux-avg t_T ((SV+SH)/2)", I.flux_average(false));
     }
     // (c)
     double worst = 0.0;
@@ -73,12 +73,12 @@ int main() {
         worst = std::max(worst, std::abs(amm_psv(Si, Si, false, th).T_S - 1.0));
         worst = std::max(worst, std::abs(amm_sh(Si, Si, th) - 1.0));
     }
-    audit::check("identical media: max |T - 1|", worst, 0.0, 0.0, 1e-12);
+    cmpmc_test::check("identical media: max |T - 1|", worst, 0.0, 0.0, 1e-12);
     // (d)
     const double th1 = 0.6, th2 = std::asin(Al.vT / Si.vT * std::sin(th1));
-    audit::check("SH reciprocity T_12(th1) = T_21(th2), Si/Al", amm_sh(Si, Al, th1), amm_sh(Al, Si, th2), 1e-12);
+    cmpmc_test::check("SH reciprocity T_12(th1) = T_21(th2), Si/Al", amm_sh(Si, Al, th1), amm_sh(Al, Si, th2), 1e-12);
     // P-SV reciprocity: T_P(1->2, P at th1) equals T_P(2->1, P at th2) (Snell-related angles)
     const double thp2 = std::asin(Al.vL / Si.vL * std::sin(th1));
-    audit::check("P-SV reciprocity T_PP 12 vs 21, Si/Al", amm_psv(Si, Al, true, th1).T_P, amm_psv(Al, Si, true, thp2).T_P, 1e-10);
-    return audit::result();
+    cmpmc_test::check("P-SV reciprocity T_PP 12 vs 21, Si/Al", amm_psv(Si, Al, true, th1).T_P, amm_psv(Al, Si, true, thp2).T_P, 1e-10);
+    return cmpmc_test::result();
 }

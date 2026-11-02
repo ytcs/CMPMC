@@ -6,13 +6,13 @@
 #include <stdexcept>
 #include <string>
 
-namespace cmpmc::materials {
+namespace cmpmc::io {
 
 // ============================================================================
 // G4CMP `config.txt` File Parser (Replaces G4LatticeReader)
 // Reads any `CrystalMaps/*/config.txt` file directly into a `CrystalConfig`.
 // ============================================================================
-inline CrystalConfig load_g4cmp_config_file(const std::string& filepath,
+inline CrystalConfig import_g4cmp_config(const std::string& filepath,
                                             double density_kg_m3 = 5323.0,
                                             const std::string& name = "Custom") {
     std::ifstream in(filepath);
@@ -149,4 +149,4 @@ inline CrystalConfig load_g4cmp_config_file(const std::string& filepath,
     return cfg;
 }
 
-} // namespace cmpmc::materials
+} // namespace cmpmc::io

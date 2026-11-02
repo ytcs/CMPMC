@@ -1,6 +1,7 @@
 #pragma once
 
-// Top-level convenience header for Core Math, Units, PRNG, and Track types
+// Core types: units and constants, vector math, random numbers, track records,
+// and the runtime guard for experimental modules.
 #include "cmpmc/core/units.hpp"
 #include "cmpmc/core/math.hpp"
 #include "cmpmc/core/rng.hpp"

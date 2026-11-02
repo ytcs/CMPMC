@@ -4,8 +4,8 @@
 //      match Leman, arXiv:1109.1193, Eqs. (9) and (12) [the G4CMP GetLTDecayProb /
 //      GetTTDecayProb forms], integrated independently here;
 //  (c) energy conservation per decay (exact by construction, checked on samples).
-#include "audit_common.hpp"
-#include "cmpmc/lattice.hpp"
+#include "test_support.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <vector>
 
 using namespace cmpmc;
@@ -60,11 +60,11 @@ static void run(const CrystalConfig& cfg) {
         const double per2 = k1 * std::sin(t1) - k2 * std::sin(t2);
         worst_tt = std::max(worst_tt, std::hypot(par2, per2) / k0);
     }
-    audit::check(n + " L->L'T max |k1+k2-k0|/k0", worst_lt, 0.0, 0.0, 1e-9);
-    audit::check(n + " L->TT  max |k1+k2-k0|/k0", worst_tt, 0.0, 0.0, 1e-9);
+    cmpmc_test::check(n + " L->L'T max |k1+k2-k0|/k0", worst_lt, 0.0, 0.0, 1e-9);
+    cmpmc_test::check(n + " L->TT  max |k1+k2-k0|/k0", worst_tt, 0.0, 0.0, 1e-9);
     {
         const double cth = std::cos(lat.theta_TT(0.5));
-        audit::check(n + " L->TT cos(theta) at x=0.5 (Leman (13): 1/d)", cth, 1.0 / d, 1e-9);
+        cmpmc_test::check(n + " L->TT cos(theta) at x=0.5 (Leman (13): 1/d)", cth, 1.0 / d, 1e-9);
     }
 
     // (b) energy-fraction distributions
@@ -80,16 +80,16 @@ static void run(const CrystalConfig& cfg) {
     const double mlt = s1 / NS, vlt = s2 / NS - mlt * mlt, mtt = t1 / NS, vtt = t2 / NS - mtt * mtt;
     const Moments lt = pdf_moments([&](double x) { return leman_lt(d, x); }, (d - 1) / (d + 1), 1.0);
     const Moments tt = pdf_moments([&](double f) { return leman_tt(d, d * f, cfg); }, 0.5 * (1 - 1 / d), 0.5 * (1 + 1 / d));
-    audit::check(n + " L->L'T <x> vs Leman (9)", mlt, lt.m1, 2e-3);
-    audit::check(n + " L->L'T Var(x) vs Leman (9)", vlt, lt.m2, 2e-2);
-    audit::check(n + " L->TT  <x> vs Leman (12)", mtt, tt.m1, 2e-3);
-    audit::check(n + " L->TT  Var(x) vs Leman (12)", vtt, tt.m2, 2e-2);
-    audit::check(n + " energy conservation per decay", econs, 0.0, 0.0, 1e-14);
+    cmpmc_test::check(n + " L->L'T <x> vs Leman (9)", mlt, lt.m1, 2e-3);
+    cmpmc_test::check(n + " L->L'T Var(x) vs Leman (9)", vlt, lt.m2, 2e-2);
+    cmpmc_test::check(n + " L->TT  <x> vs Leman (12)", mtt, tt.m1, 2e-3);
+    cmpmc_test::check(n + " L->TT  Var(x) vs Leman (12)", vtt, tt.m2, 2e-2);
+    cmpmc_test::check(n + " energy conservation per decay", econs, 0.0, 0.0, 1e-14);
 }
 
 int main() {
     std::printf("# test_anharmonic_decay\n");
     run(materials::Germanium());
     run(materials::Silicon());
-    return audit::result();
+    return cmpmc_test::result();
 }

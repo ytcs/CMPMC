@@ -1,6 +1,7 @@
-#include "cmpmc/engine.hpp"
-#include "cmpmc/gpu/wavefront_pipeline.hpp"
-#include "cmpmc/wavefront_soa.hpp"
+#include "cmpmc/transport/engine.hpp"
+#include "cmpmc/experimental/wavefront_pipeline.hpp"
+#include "cmpmc/experimental/next_event_estimation.hpp"
+#include "cmpmc/experimental/wavefront_soa.hpp"
 #include <chrono>
 #include <iomanip>
 #include <iostream>
@@ -587,7 +588,7 @@ static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
 
     DetectorModel det{};
     det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
-    WavefrontSoAEngine soa_engine(ge_lattice, det);
+    experimental::WavefrontSoAEngine soa_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
     Rng rng(7007);
@@ -625,7 +626,7 @@ static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattic
 
     DetectorModel det{};
     det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
-    gpu::WavefrontPipelineEngine wf_engine(ge_lattice, det);
+    experimental::WavefrontPipelineEngine wf_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
     Rng rng(8008);
@@ -698,7 +699,7 @@ static void run_hit_merging_and_nee_benchmark(const CrystalLattice& ge_lattice) 
     // Evaluate Next-Event Estimation (NEE) from a bottom-face diffuse reflection
     // onto a sparse 100-um radius superconducting qubit pad on the top face
     double flight_dt = 0.0;
-    const double nee_edep = physics::evaluate_sparse_sensor_nee(
+    const double nee_edep = experimental::evaluate_sparse_sensor_nee(
         /*refl_pos=*/{0.0, 0.0, -1.27 * units::cm},
         /*refl_inward_normal=*/{0.0, 0.0, 1.0},
         /*pad_center=*/{0.0, 0.0, +1.27 * units::cm},

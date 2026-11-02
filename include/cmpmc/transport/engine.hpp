@@ -1,13 +1,16 @@
 #pragma once
 
-#include "cmpmc/charge.hpp"
-#include "cmpmc/core.hpp"
-#include "cmpmc/geometry.hpp"
-#include "cmpmc/kaplan.hpp"
-#include "cmpmc/lattice.hpp"
-#include "cmpmc/partition.hpp"
-#include "cmpmc/physics/custom_excitation_example.hpp"
-#include "cmpmc/physics/fast_shortcuts.hpp"
+#include "cmpmc/charge/charge_transport.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/geometry/mesh_field.hpp"
+#include "cmpmc/geometry/solids.hpp"
+#include "cmpmc/geometry/surface_property.hpp"
+#include "cmpmc/superconductor/kaplan_film.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
+#include "cmpmc/charge/energy_partition.hpp"
+#include "cmpmc/transport/excitation_model.hpp"
+#include "cmpmc/experimental/jump_to_ballistic.hpp"
+#include "cmpmc/transport/variance_reduction.hpp"
 #include <array>
 #include <cstdint>
 #include <vector>
@@ -126,7 +129,7 @@ struct DetectorModel {
     double electrode_seed_max_gap  = 80.0;   // ElectrodeFilm: E_rel enters as quanta of <= this x Delta (numerical)
 
     // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
-    physics::JumpToBallisticConfig jump_to_ballistic{};
+    experimental::JumpToBallisticConfig jump_to_ballistic{};
     // Opt-in for modules without a validated reference path (core/validation.hpp). Default off:
     // jump-to-ballistic, fast-chord HV Luke, the SoA / GPU wavefront engines, the bulk 3D-QP
     // transport, the IV Matrix rate and the G4CMP demo surface coefficients then throw.
@@ -147,7 +150,7 @@ public:
         : lattice_(lattice), detector_(detector), charge_phys_(lattice) {
         for (const auto& sp : detector_.surfaces)
             if (sp.demo_values)
-                require_validated(detector_.allow_unvalidated, "SurfaceProperty::g4cmp_demo_*",
+                require_validated(detector_.allow_unvalidated, "SurfaceProperty::demo_polynomial_*",
                                   "G4CMP example reflection/down-conversion polynomials are demonstration values");
     }
 
@@ -405,7 +408,7 @@ public:
                     break;
                 }
 
-                if (!physics::apply_russian_roulette(trk.weight, trk.bounces,
+                if (!apply_russian_roulette(trk.weight, trk.bounces,
                                                      detector_.russian_roulette_bounces,
                                                      detector_.russian_roulette_survival, rng)) {
                     stats.killed_tracks++;
@@ -418,7 +421,7 @@ public:
                     const double clearance = std::min(detector_.solid.radius - r_xy,
                                                       detector_.solid.half_z - std::abs(trk.pos.z));
                     if (clearance > 0.0) {
-                        physics::jump_to_ballistic_cascade(
+                        experimental::jump_to_ballistic_cascade(
                             trk, clearance, lattice_, detector_.jump_to_ballistic,
                             stack, stats.decays_L_to_TT, stats.decays_L_to_LT,
                             stats.isotope_scatters, rng);
@@ -569,9 +572,9 @@ public:
 
     // ========================================================================
     // 3. Extensible Custom Excitation Transport (BogoliubovQP, Exciton, Magnon)
-    //    Uses C++20 `physics::ExcitationProcessConcept` for zero-overhead inlining!
+    //    Uses C++20 `ExcitationModel` for zero-overhead inlining!
     // ========================================================================
-    template <physics::ExcitationProcessConcept Model>
+    template <ExcitationModel Model>
     void transport_custom_excitation(const Model& model,
                                      std::vector<GenericExcitationTrack>& stack,
                                      std::vector<SensorHit>& hits,

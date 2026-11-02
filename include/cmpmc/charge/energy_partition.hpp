@@ -1,9 +1,9 @@
 #pragma once
 
-#include "cmpmc/charge.hpp"
-#include "cmpmc/core.hpp"
-#include "cmpmc/lattice.hpp"
-#include "cmpmc/physics/niel_models.hpp"
+#include "cmpmc/charge/charge_transport.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
+#include "cmpmc/charge/niel_models.hpp"
 #include <algorithm>
 #include <cmath>
 #include <vector>

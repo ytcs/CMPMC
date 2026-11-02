@@ -7,8 +7,8 @@
 //  (c) Si [100]: v_L = sqrt(C11/rho), v_T = sqrt(C44/rho) (closed form, Leman 1109.1193 Table I
 //      inputs via the preset), [111] v_L = sqrt((C11 + 2C12 + 4C44)/(3 rho));
 //  (d) cost per call (reported) and that CrystalLattice::map_k_to_vg_exact uses it.
-#include "audit_common.hpp"
-#include "cmpmc/lattice.hpp"
+#include "test_support.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <chrono>
 #include <string>
 
@@ -42,9 +42,9 @@ int main() {
             }
             if (gapmin > 1e-3) ++nfar;
         }
-        audit::check(cfg.name + " max rel |v_p cardano - jacobi|", dvp, 0.0, 0.0, 1e-10);
-        audit::check(cfg.name + " max rel |v_g cardano - jacobi| (gap > 1e-3)", dvg, 0.0, 0.0, 1e-8);
-        audit::info(cfg.name + " fraction of directions with gap > 1e-3", nfar / 200000.0);
+        cmpmc_test::check(cfg.name + " max rel |v_p cardano - jacobi|", dvp, 0.0, 0.0, 1e-10);
+        cmpmc_test::check(cfg.name + " max rel |v_g cardano - jacobi| (gap > 1e-3)", dvg, 0.0, 0.0, 1e-8);
+        cmpmc_test::info(cfg.name + " fraction of directions with gap > 1e-3", nfar / 200000.0);
         // timing
         Rng r2(5); Vec3 g[3]; double p[3]; double sink = 0;
         auto t0 = std::chrono::steady_clock::now();
@@ -52,8 +52,8 @@ int main() {
         auto t1 = std::chrono::steady_clock::now();
         for (int n = 0; n < 200000; ++n) { physics::solve_christoffel_cardano(C, cfg.density, r2.isotropic_dir(), g, p); sink += p[0]; }
         auto t2 = std::chrono::steady_clock::now();
-        audit::info(cfg.name + " ns/call Jacobi", std::chrono::duration<double, std::nano>(t1 - t0).count() / 200000);
-        audit::info(cfg.name + " ns/call Cardano", std::chrono::duration<double, std::nano>(t2 - t1).count() / 200000 + 0 * sink);
+        cmpmc_test::info(cfg.name + " ns/call Jacobi", std::chrono::duration<double, std::nano>(t1 - t0).count() / 200000);
+        cmpmc_test::info(cfg.name + " ns/call Cardano", std::chrono::duration<double, std::nano>(t2 - t1).count() / 200000 + 0 * sink);
     }
     // (c) closed forms, Si
     const auto si = materials::Silicon();
@@ -61,21 +61,21 @@ int main() {
     const auto V = si.build_voigt_matrix();
     Vec3 g[3]; double p[3];
     physics::solve_christoffel_cardano(C, si.density, {1, 0, 0}, g, p);   // degenerate T: Jacobi fallback
-    audit::check("Si [100] v_L vs sqrt(C11/rho)", p[0], std::sqrt(V[0][0] / si.density), 1e-12);
-    audit::check("Si [100] v_T vs sqrt(C44/rho)", p[1], std::sqrt(V[3][3] / si.density), 1e-12);
+    cmpmc_test::check("Si [100] v_L vs sqrt(C11/rho)", p[0], std::sqrt(V[0][0] / si.density), 1e-12);
+    cmpmc_test::check("Si [100] v_T vs sqrt(C44/rho)", p[1], std::sqrt(V[3][3] / si.density), 1e-12);
     const double s3 = 1.0 / std::sqrt(3.0);
     physics::solve_christoffel_cardano(C, si.density, {s3, s3, s3}, g, p);
-    audit::check("Si [111] v_L vs sqrt((C11+2C12+4C44)/(3 rho))", p[0], std::sqrt((V[0][0] + 2 * V[0][1] + 4 * V[3][3]) / (3 * si.density)), 1e-12);
+    cmpmc_test::check("Si [111] v_L vs sqrt((C11+2C12+4C44)/(3 rho))", p[0], std::sqrt((V[0][0] + 2 * V[0][1] + 4 * V[3][3]) / (3 * si.density)), 1e-12);
     const double s2 = 1.0 / std::sqrt(2.0);
     physics::solve_christoffel_cardano(C, si.density, {s2, s2, 0}, g, p);   // [110]: non-degenerate
-    audit::check("Si [110] v_L vs sqrt((C11+C12+2C44)/(2 rho))", p[0], std::sqrt((V[0][0] + V[0][1] + 2 * V[3][3]) / (2 * si.density)), 1e-12);
-    audit::check("Si [110] v_FT vs sqrt(C44/rho)", p[1], std::sqrt(V[3][3] / si.density), 1e-12);
-    audit::check("Si [110] v_ST vs sqrt((C11-C12)/(2 rho))", p[2], std::sqrt((V[0][0] - V[0][1]) / (2 * si.density)), 1e-12);
+    cmpmc_test::check("Si [110] v_L vs sqrt((C11+C12+2C44)/(2 rho))", p[0], std::sqrt((V[0][0] + V[0][1] + 2 * V[3][3]) / (2 * si.density)), 1e-12);
+    cmpmc_test::check("Si [110] v_FT vs sqrt(C44/rho)", p[1], std::sqrt(V[3][3] / si.density), 1e-12);
+    cmpmc_test::check("Si [110] v_ST vs sqrt((C11-C12)/(2 rho))", p[2], std::sqrt((V[0][0] - V[0][1]) / (2 * si.density)), 1e-12);
     // (d) lattice Exact mode goes through the Cardano path
     CrystalLattice lat(si); lat.set_kinematics_mode(CrystalLattice::KinematicsMode::Exact);
     Rng r3(8); const Vec3 k = r3.isotropic_dir();
     const auto kin = lat.map_k_to_vg_exact(PhononMode::ST, k);
     physics::solve_christoffel_cardano(C, si.density, k, g, p);
-    audit::check("lattice Exact ST |v_g| == cardano", kin.vg_mag, g[2].norm(), 1e-12);
-    return audit::result();
+    cmpmc_test::check("lattice Exact ST |v_g| == cardano", kin.vg_mag, g[2].norm(), 1e-12);
+    return cmpmc_test::result();
 }

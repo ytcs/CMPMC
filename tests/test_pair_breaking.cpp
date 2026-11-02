@@ -16,8 +16,8 @@
 //  (d) no-loss asymptote 0.59 (1401.1937 [FT]; WP5-v4 Sec. 5: 0.57-0.6) and the F_qp report.
 //  (e) eta decreases monotonically as the film gets thinner (tau_l down) at fixed Omega >= 5D;
 //  (f) cascade energy closure at 50-350 D (former 64-entry buffer lost energy above ~130 D).
-#include "audit_common.hpp"
-#include "cmpmc/kaplan.hpp"
+#include "test_support.hpp"
+#include "cmpmc/superconductor/kaplan_film.hpp"
 #include <string>
 #include <vector>
 
@@ -41,11 +41,11 @@ int main() {
     const double D = f.gap_energy, t0 = f.phonon_lifetime;
 
     // (a)
-    audit::check("tau0/tau_pb(2D) (closed form 1)", f.kaplan_pair_breaking_rate(2.0 * D * (1 + 1e-12)) * t0, 1.0, 1e-9);
+    cmpmc_test::check("tau0/tau_pb(2D) (closed form 1)", f.kaplan_pair_breaking_rate(2.0 * D * (1 + 1e-12)) * t0, 1.0, 1e-9);
     for (double W : {2.5, 3.0, 5.0, 10.0, 40.0})
-        audit::check("I(Omega)/D vs brute quadrature, Omega=" + std::to_string(W).substr(0, 4) + "D",
+        cmpmc_test::check("I(Omega)/D vs brute quadrature, Omega=" + std::to_string(W).substr(0, 4) + "D",
                      f.kaplan_pb_integral(W * D) / D, brute_I(W * D, D) / D, 1e-5);
-    audit::info("tau0/tau_pb(100D) * pi / (Omega/D) (-> 1)", f.kaplan_pair_breaking_rate(100 * D) * t0 * units::pi / 100.0);
+    cmpmc_test::info("tau0/tau_pb(100D) * pi / (Omega/D) (-> 1)", f.kaplan_pair_breaking_rate(100 * D) * t0 * units::pi / 100.0);
 
     Rng rng(20261101);
     const int N = 40000;
@@ -54,9 +54,9 @@ int main() {
         f.phonon_loss_time = tl * t0;
         for (double W : {2.2, 3.0, 3.9}) {
             const auto r = f.pair_breaking_efficiency(W * D, N, rng, KaplanFilm::Seed::Photon);
-            audit::check("eta photon, tau_l/tau0=" + std::to_string(tl).substr(0, 3) + ", W=" + std::to_string(W).substr(0, 3) + " vs 2D/Omega",
+            cmpmc_test::check("eta photon, tau_l/tau0=" + std::to_string(tl).substr(0, 3) + ", W=" + std::to_string(W).substr(0, 3) + " vs 2D/Omega",
                          r.eta, 2.0 / W, 1e-12, 1e-12);
-            audit::check("  F_qp (N_qp = 2 exactly)", r.F_qp, 0.0, 0.0, 1e-12);
+            cmpmc_test::check("  F_qp (N_qp = 2 exactly)", r.F_qp, 0.0, 0.0, 1e-12);
         }
     }
     // (c) 1401.1937 Fig. 4 digitised: rows tau_l/tau_0^phi, columns h nu/D = 5, 6, 7, 8, 10
@@ -73,7 +73,7 @@ int main() {
         for (int b = 0; b < 5; ++b) {
             const auto r = f.pair_breaking_efficiency(hv[b] * D, N, rng, KaplanFilm::Seed::Photon);
             eta_tab[a][b] = r.eta;
-            audit::check("eta_s tau_l/tau0=" + std::to_string(tls[a]).substr(0, 3) + " hv=" + std::to_string((int)hv[b]) + "D vs 1401.1937 Fig.4",
+            cmpmc_test::check("eta_s tau_l/tau0=" + std::to_string(tls[a]).substr(0, 3) + " hv=" + std::to_string((int)hv[b]) + "D vs 1401.1937 Fig.4",
                          r.eta, fig4[a][b], 0.0, (tls[a] < 5.0) ? 0.015 : 0.045);
         }
     }
@@ -81,22 +81,22 @@ int main() {
     f.phonon_loss_time = 0.0;
     for (double W : {10.0, 20.0}) {
         const auto r = f.pair_breaking_efficiency(W * D, N, rng, KaplanFilm::Seed::Photon);
-        audit::check("eta_s no loss, hv=" + std::to_string((int)W) + "D vs 0.59 (1401.1937)", r.eta, 0.59, 0.0, 0.01);
-        audit::info("  F_qp no loss", r.F_qp);
+        cmpmc_test::check("eta_s no loss, hv=" + std::to_string((int)W) + "D vs 0.59 (1401.1937)", r.eta, 0.59, 0.0, 0.01);
+        cmpmc_test::info("  F_qp no loss", r.F_qp);
         const auto p = f.pair_breaking_efficiency(W * D, N, rng, KaplanFilm::Seed::Phonon);
-        audit::info("  eta (phonon seed, case I) no loss", p.eta);
+        cmpmc_test::info("  eta (phonon seed, case I) no loss", p.eta);
     }
     f.phonon_loss_time = 1.0 * t0;
     {
         const auto p = f.pair_breaking_efficiency(10 * D, N, rng, KaplanFilm::Seed::Phonon);
-        audit::info("eta phonon seed incl. entry loss, tau_l/tau0=1, 10D", p.eta);
-        audit::info("  F_qp", p.F_qp);
+        cmpmc_test::info("eta phonon seed incl. entry loss, tau_l/tau0=1, 10D", p.eta);
+        cmpmc_test::info("  F_qp", p.F_qp);
     }
     // (e) monotonic in tau_l
     for (int b = 0; b < 5; ++b) {
         bool mono = true;
         for (int a = 1; a < 5; ++a) mono = mono && (eta_tab[a][b] > eta_tab[a - 1][b]);
-        audit::check("eta increases with tau_l at hv=" + std::to_string((int)hv[b]) + "D", mono ? 1.0 : 0.0, 1.0, 0.0);
+        cmpmc_test::check("eta increases with tau_l at hv=" + std::to_string((int)hv[b]) + "D", mono ? 1.0 : 0.0, 1.0, 0.0);
     }
     // (f) energy closure of the cascade at Debye-scale energies (buffer capacity): absorbed +
     //     re-emitted = incident for every event (legacy loss law, thin film, sub-gap re-emission)
@@ -111,8 +111,8 @@ int main() {
                 for (double r : refl) e += r;
                 worst = std::max(worst, std::abs(e / (W * D) - 1.0));
             }
-            audit::check("cascade energy closure, Omega=" + std::to_string((int)W) + "D (max over 2000)", worst, 0.0, 0.0, 1e-12);
+            cmpmc_test::check("cascade energy closure, Omega=" + std::to_string((int)W) + "D (max over 2000)", worst, 0.0, 0.0, 1e-12);
         }
     }
-    return audit::result();
+    return cmpmc_test::result();
 }

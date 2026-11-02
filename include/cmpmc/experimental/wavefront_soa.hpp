@@ -1,15 +1,15 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
-#include "cmpmc/engine.hpp"
-#include "cmpmc/lattice.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/transport/engine.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
 
-namespace cmpmc {
+namespace cmpmc::experimental {
 
 // ============================================================================
 // Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Transport Kernel
@@ -96,7 +96,7 @@ public:
         : lattice_(lattice),
           detector_(detector),
           scalar_engine_(lattice, detector),
-          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "WavefrontSoAEngine",
+          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "experimental::WavefrontSoAEngine",
                                                "L->TT only, isotropic daughters, diffuse-only walls, first re-emitted phonon only"),
                              KaplanFilm::aluminum_sensor())) {}
 
@@ -273,4 +273,4 @@ private:
     KaplanSurrogateLUT kaplan_surrogate_;
 };
 
-} // namespace cmpmc
+} // namespace cmpmc::experimental

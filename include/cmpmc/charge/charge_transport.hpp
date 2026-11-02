@@ -1,7 +1,7 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
-#include "cmpmc/lattice.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>

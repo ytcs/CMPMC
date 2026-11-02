@@ -11,8 +11,8 @@
 //      bulk release (h nu_D(Ge) = 35.7 meV); the absorbed fraction is the film's eta_pb;
 //  (e) numerical seed-quantum size (80 vs 160 Delta; the hot-electron cascade feeds phonons up to
 //      h nu_D(Al) ~ 200 Delta): absorbed fraction and mean re-emitted energy agree to < 2%.
-#include "audit_common.hpp"
-#include "cmpmc/engine.hpp"
+#include "test_support.hpp"
+#include "cmpmc/transport/engine.hpp"
 #include <string>
 
 using namespace cmpmc;
@@ -53,18 +53,18 @@ int main() {
         DetectorModel d = det; d.fermi_level_above_Ev_eV = muF;
         const Out e = run(ge, d, ExcitationType::Electron, N, 1), h = run(ge, d, ExcitationType::Hole, N, 2);
         const double mu = muF < 0 ? 0.5 * Eg : muF;
-        audit::check("RecordOnly mu_F=" + std::to_string(mu).substr(0, 5) + ": (E_rel,e + E_rel,h)/N vs E_g", (e.erel + h.erel) / N, Eg, 1e-4);
-        audit::check("  e- E_rel/N vs E_c - mu_F", e.erel / N, Eg - mu, 1e-4);
-        audit::check("  closure hit = E_rel (no phonons)", e.hit + h.hit, e.erel + h.erel, 1e-12);
+        cmpmc_test::check("RecordOnly mu_F=" + std::to_string(mu).substr(0, 5) + ": (E_rel,e + E_rel,h)/N vs E_g", (e.erel + h.erel) / N, Eg, 1e-4);
+        cmpmc_test::check("  e- E_rel/N vs E_c - mu_F", e.erel / N, Eg - mu, 1e-4);
+        cmpmc_test::check("  closure hit = E_rel (no phonons)", e.hit + h.hit, e.erel + h.erel, 1e-12);
     }
     // (b) + (c) BulkDebye
     {
         DetectorModel d = det; d.charge_release = DetectorModel::ChargeRelease::BulkDebye;
         const Out o = run(ge, d, ExcitationType::Electron, N, 3);
-        audit::check("BulkDebye closure hit + phonons + lost = E_rel", o.hit + o.ph + o.lost, o.erel, 1e-12);
-        audit::check("BulkDebye phonon energy vs E_rel/round(E_rel/h nu_D)", o.emean,
+        cmpmc_test::check("BulkDebye closure hit + phonons + lost = E_rel", o.hit + o.ph + o.lost, o.erel, 1e-12);
+        cmpmc_test::check("BulkDebye phonon energy vs E_rel/round(E_rel/h nu_D)", o.emean,
                      (o.erel / N) / std::max(1.0, std::round((o.erel / N) / hnuD)), 1e-9);
-        audit::info("BulkDebye phonons per carrier", o.n_ph / N);
+        cmpmc_test::info("BulkDebye phonons per carrier", o.n_ph / N);
     }
     // (b) + (d) + (e) ElectrodeFilm, legacy and rate-competition film loss
     for (int lm = 0; lm < 2; ++lm) {
@@ -85,16 +85,16 @@ int main() {
             }
             o[k].emean = o[k].ph / o[k].n_ph; o[k].below2 /= o[k].n_ph; o[k].below4 /= o[k].n_ph;
         }
-        audit::check(tag + " closure hit + phonons + lost = E_rel", o[0].hit + o[0].ph + o[0].lost, o[0].erel, 1e-12);
-        audit::info(tag + " absorbed fraction (film eta)", o[0].hit / o[0].erel);
-        audit::info(tag + " re-injected fraction", o[0].ph / o[0].erel);
-        audit::info(tag + " mean re-injected phonon energy / Delta_Al", o[0].emean / D);
-        audit::info(tag + " fraction of phonons < 2 Delta_Al", o[0].below2);
-        audit::info(tag + " fraction of phonons < 4 Delta_Al", o[0].below4);
-        audit::check(tag + " soft: mean re-injected energy < 4 Delta_Al", o[0].emean < 4 * D ? 1.0 : 0.0, 1.0, 0.0);
-        audit::info(tag + " h nu_D(Ge) / mean re-injected energy", hnuD / o[0].emean);
-        audit::check(tag + " seed 160D vs 80D: absorbed fraction", o[1].hit / o[1].erel, o[0].hit / o[0].erel, 0.02);
-        audit::check(tag + " seed 160D vs 80D: mean re-injected energy", o[1].emean, o[0].emean, 0.02);
+        cmpmc_test::check(tag + " closure hit + phonons + lost = E_rel", o[0].hit + o[0].ph + o[0].lost, o[0].erel, 1e-12);
+        cmpmc_test::info(tag + " absorbed fraction (film eta)", o[0].hit / o[0].erel);
+        cmpmc_test::info(tag + " re-injected fraction", o[0].ph / o[0].erel);
+        cmpmc_test::info(tag + " mean re-injected phonon energy / Delta_Al", o[0].emean / D);
+        cmpmc_test::info(tag + " fraction of phonons < 2 Delta_Al", o[0].below2);
+        cmpmc_test::info(tag + " fraction of phonons < 4 Delta_Al", o[0].below4);
+        cmpmc_test::check(tag + " soft: mean re-injected energy < 4 Delta_Al", o[0].emean < 4 * D ? 1.0 : 0.0, 1.0, 0.0);
+        cmpmc_test::info(tag + " h nu_D(Ge) / mean re-injected energy", hnuD / o[0].emean);
+        cmpmc_test::check(tag + " seed 160D vs 80D: absorbed fraction", o[1].hit / o[1].erel, o[0].hit / o[0].erel, 0.02);
+        cmpmc_test::check(tag + " seed 160D vs 80D: mean re-injected energy", o[1].emean, o[0].emean, 0.02);
     }
-    return audit::result();
+    return cmpmc_test::result();
 }

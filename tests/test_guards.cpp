@@ -1,10 +1,11 @@
 // R16 test: runtime guards on modules without a validated reference path (core/validation.hpp).
 // Each guarded entry point must throw UnvalidatedModuleError by default and run when the caller
 // opts in (DetectorModel::allow_unvalidated / the NEE argument). Validated paths must not throw.
-#include "audit_common.hpp"
-#include "cmpmc/engine.hpp"
-#include "cmpmc/wavefront_soa.hpp"
-#include "cmpmc/gpu/wavefront_pipeline.hpp"
+#include "test_support.hpp"
+#include "cmpmc/transport/engine.hpp"
+#include "cmpmc/experimental/next_event_estimation.hpp"
+#include "cmpmc/experimental/wavefront_soa.hpp"
+#include "cmpmc/experimental/wavefront_pipeline.hpp"
 #include <functional>
 #include <string>
 
@@ -13,7 +14,7 @@ using namespace cmpmc;
 static void expect(const std::string& name, bool should_throw, const std::function<void()>& f) {
     bool threw = false;
     try { f(); } catch (const UnvalidatedModuleError&) { threw = true; }
-    audit::check(name + (should_throw ? " throws by default" : " runs"), threw ? 1.0 : 0.0, should_throw ? 1.0 : 0.0, 0.0);
+    cmpmc_test::check(name + (should_throw ? " throws by default" : " runs"), threw ? 1.0 : 0.0, should_throw ? 1.0 : 0.0, 0.0);
 }
 
 int main() {
@@ -37,10 +38,10 @@ int main() {
             CrystalConfig c = materials::Silicon(); c.iv_model = IVRateModel::Matrix;
             const CrystalLattice si(c); SimulationEngine e(si, det); std::vector<ChargeTrack> cs; std::vector<PhononTrack> p;
             std::vector<SensorHit> h; SimStats S; e.transport_charges(cs, p, h, S, rng); });
-        expect("WavefrontSoAEngine" + sfx, !allow, [&] { WavefrontSoAEngine e(ge, det); });
-        expect("gpu::WavefrontPipelineEngine" + sfx, !allow, [&] { gpu::WavefrontPipelineEngine e(ge, det); });
+        expect("experimental::WavefrontSoAEngine" + sfx, !allow, [&] { experimental::WavefrontSoAEngine e(ge, det); });
+        expect("experimental::WavefrontPipelineEngine" + sfx, !allow, [&] { experimental::WavefrontPipelineEngine e(ge, det); });
         expect("evaluate_sparse_sensor_nee" + sfx, !allow, [&] {
-            double t = 0; physics::evaluate_sparse_sensor_nee({0, 0, -0.01}, {0, 0, 1}, {0, 0, 0.01}, {0, 0, -1},
+            double t = 0; experimental::evaluate_sparse_sensor_nee({0, 0, -0.01}, {0, 0, 1}, {0, 0, 0.01}, {0, 0, -1},
                                                               1e-4, 1e-3, 1.0, t, 3500.0, allow); });
     }
     // validated paths do not throw
@@ -51,5 +52,5 @@ int main() {
     expect("transport_charges (Linear IV)", false, [&] {
         SimulationEngine e(ge, det); std::vector<ChargeTrack> c; std::vector<PhononTrack> p;
         std::vector<SensorHit> h; SimStats S; e.transport_charges(c, p, h, S, rng); });
-    return audit::result();
+    return cmpmc_test::result();
 }

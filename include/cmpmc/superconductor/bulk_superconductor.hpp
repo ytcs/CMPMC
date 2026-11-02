@@ -32,7 +32,7 @@ namespace cmpmc::physics {
 //   accuracy in 64 quadrature nodes (~250x faster initialization).
 // ============================================================================
 
-struct Superconductor3D {
+struct BulkSuperconductor {
     static constexpr int N_LUT_BINS = 256;
     static constexpr double MIN_PH_DIV_GAP = 2.0;
     static constexpr double MAX_PH_DIV_GAP = 60.0;
@@ -52,9 +52,9 @@ struct Superconductor3D {
     std::array<double, N_LUT_BINS> inv_tau_rad_lut_{}; // 1 / tau_rad(E_qp) [1/s]
     std::array<double, N_LUT_BINS> inv_tau_rec_lut_{}; // 1 / tau_rec(E_qp) [1/s]
 
-    Superconductor3D() = default;
+    BulkSuperconductor() = default;
 
-    explicit Superconductor3D(const CrystalConfig& cfg) {
+    explicit BulkSuperconductor(const CrystalConfig& cfg) {
         init_from_config(cfg);
     }
 

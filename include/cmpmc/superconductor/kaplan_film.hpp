@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
+#include "cmpmc/core/core.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
 #include <algorithm>

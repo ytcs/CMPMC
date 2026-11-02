@@ -1,9 +1,9 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
-#include "cmpmc/engine.hpp"
-#include "cmpmc/kaplan.hpp"
-#include "cmpmc/lattice.hpp"
+#include "cmpmc/core/core.hpp"
+#include "cmpmc/transport/engine.hpp"
+#include "cmpmc/superconductor/kaplan_film.hpp"
+#include "cmpmc/lattice/crystal_lattice.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -14,7 +14,7 @@
 #define CMPMC_HOST_DEVICE
 #endif
 
-namespace cmpmc::gpu {
+namespace cmpmc::experimental {
 
 // ============================================================================
 // Tier-3 GPU-Ready Wavefront Path-Tracing Pipeline (Zero Warp Divergence)
@@ -72,7 +72,7 @@ public:
     WavefrontPipelineEngine(const CrystalLattice& lattice, const DetectorModel& detector)
         : lattice_(lattice),
           detector_(detector),
-          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "gpu::WavefrontPipelineEngine",
+          kaplan_surrogate_((require_validated(detector.allow_unvalidated, "experimental::WavefrontPipelineEngine",
                                                "isotropic decay daughters"),
                              KaplanFilm::aluminum_sensor())) {}
 
@@ -260,4 +260,4 @@ private:
     }
 };
 
-} // namespace cmpmc::gpu
+} // namespace cmpmc::experimental

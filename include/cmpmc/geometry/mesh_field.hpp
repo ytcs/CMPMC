@@ -1,6 +1,6 @@
 #pragma once
 
-#include "cmpmc/core.hpp"
+#include "cmpmc/core/core.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>

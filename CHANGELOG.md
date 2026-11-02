@@ -46,7 +46,6 @@ breaking changes.
   | `physics::evaluate_sparse_sensor_nee` | `experimental::evaluate_sparse_sensor_nee` |
   | `WavefrontSoAEngine`, `PhononBatchSoA16` | `experimental::…` |
   | `gpu::WavefrontPipelineEngine` and related types | `experimental::…` |
-  | `ElectrodePatternMask::supercdms_qet_mask` | `ElectrodePatternMask::five_channel_qet_mask` |
 
 - The example models `BogoliubovQPModel` and `MagnonModel` moved out of the library
   into `examples/custom_excitation.cpp`.

@@ -92,7 +92,7 @@ over the uniform field.
 `geometry::ElectrodePatternMask` describes the active metal on a face as a list of
 pads. A pad is a disk, an annular sector or a rectangle, with an optional fill fraction
 and a channel id. Two presets are provided:
-- `five_channel_qet_mask(R, fill)`: an inner disk, three 120° outer sectors, and a
+- `supercdms_qet_mask(R, fill)`: the SuperCDMS five-channel QET layout, with an inner disk, three 120° outer sectors, and a
   guard ring
 - `rectangular_grid_mask(nx, ny, ...)`: an nx × ny grid of pads
 

@@ -99,11 +99,11 @@ public:
         return -1;
     }
 
-    // Preset: five-channel phonon-sensor layout on a circular face (radius R):
+    // Preset: SuperCDMS-style five-channel QET layout on a circular face (radius R):
     //   Channel 0: Inner core disk (r <= 0.55 * R)
     //   Channels 1, 2, 3: Three 120-degree outer annular sectors (0.57 * R <= r <= 0.90 * R)
     //   Channel 4: Outer guard ring (0.92 * R <= r <= 0.98 * R)
-    static ElectrodePatternMask five_channel_qet_mask(double crystal_radius_m,
+    static ElectrodePatternMask supercdms_qet_mask(double crystal_radius_m,
                                                    double fill_fraction = 1.0) {
         std::vector<ElectrodePad> pads;
         // Inner core disk (Channel 0)

@@ -442,14 +442,14 @@ static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
     const Vec3 E_3d = mesh_3d.at(test_pt);
     const Vec3 E_2d = mesh_2d.at(test_pt);
 
-    // (b) Configure detector with 3D Tetrahedral FEM field and five-channel QET mask on TopFace
+    // (b) Configure detector with 3D Tetrahedral FEM field and SuperCDMS QET mask on TopFace
     DetectorModel det{};
     det.solid.radius = R;
     det.solid.half_z = H;
     det.mesh_field_3d = mesh_3d;
     det.luke_sample_fraction = 0.05;
     det.surfaces[static_cast<size_t>(SurfaceId::TopFace)].electrode_mask =
-        geometry::ElectrodePatternMask::five_channel_qet_mask(R, /*fill_fraction=*/0.85);
+        geometry::ElectrodePatternMask::supercdms_qet_mask(R, /*fill_fraction=*/0.85);
 
     SimulationEngine engine(ge_lattice, det);
     EnergyPartition partitioner(ge_lattice);

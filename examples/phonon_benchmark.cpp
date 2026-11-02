@@ -1,3 +1,12 @@
+// Feature tour and throughput benchmark.
+//
+// Runs one short demonstration per module and a multithreaded phonon transport
+// benchmark (argument: number of primaries, default 5000). Sections marked
+// [experimental] opt into modules that are not validated (allow_unvalidated);
+// their output is for performance comparison only. See docs/validation.md.
+//
+// For representative timings configure with -DCMPMC_NATIVE_ARCH=ON.
+
 #include "cmpmc/transport/engine.hpp"
 #include "cmpmc/experimental/wavefront_pipeline.hpp"
 #include "cmpmc/experimental/next_event_estimation.hpp"
@@ -11,7 +20,7 @@
 using namespace cmpmc;
 
 // ============================================================================
-// 1. Phonon Caustics Benchmark (Replicates G4CMP examples/caustics)
+// 1. Phonon focusing caustics
 // ============================================================================
 static void run_caustics_demo(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
@@ -67,11 +76,11 @@ static void run_caustics_demo(const CrystalLattice& ge_lattice) {
 }
 
 // ============================================================================
-// 2. Full Detector Phonon + Kaplan QP Transport (Replicates G4CMP examples/phonon)
+// 2. Full detector phonon transport with Kaplan QP sensor films
 // ============================================================================
 static void run_detector_benchmark(const CrystalLattice& ge_lattice, uint32_t num_primaries, unsigned num_threads) {
     std::cout << "========================================================================\n";
-    std::cout << " [2] Full Ge Cylinder + Al QET Sensor Cascade (G4CMP examples/phonon)\n";
+    std::cout << " [2] Full Ge Cylinder + Al QET Sensor Cascade\n";
     std::cout << "========================================================================\n";
 
     DetectorModel detector{};
@@ -154,7 +163,6 @@ static void run_detector_benchmark(const CrystalLattice& ge_lattice, uint32_t nu
 
 // ============================================================================
 // 3. End-to-End Nuclear Recoil Partition + Charge Drift + NTL Phonon Cascade
-//    (Replicates G4CMPEnergyPartition + G4CMPVDriftProcess + G4CMPLukeScattering)
 // ============================================================================
 static void run_recoil_charge_luke_demo(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
@@ -221,11 +229,11 @@ static void run_recoil_charge_luke_demo(const CrystalLattice& ge_lattice) {
 }
 
 // ============================================================================
-// 4. Multi-Symmetry Crystal Presets & Polycrystalline Scattering (Burst 1)
+// 4. Crystal symmetry presets and polycrystalline scattering
 // ============================================================================
 static void run_crystal_symmetries_demo() {
     std::cout << "========================================================================\n";
-    std::cout << " [4] All-Bravais Crystal Symmetries & Polycrystal Scattering (Burst 1)\n";
+    std::cout << " [4] All-Bravais Crystal Symmetries & Polycrystal Scattering\n";
     std::cout << "========================================================================\n";
 
     CrystalConfig al2o3_cfg = materials::Sapphire();
@@ -256,11 +264,11 @@ static void run_crystal_symmetries_demo() {
 }
 
 // ============================================================================
-// 5. Matrix-Element IV Scattering, Charge Trapping & Trap Ionization (Burst 2)
+// 5. Matrix-element intervalley rate [experimental], charge trapping and trap ionization
 // ============================================================================
 static void run_charge_trapping_demo() {
     std::cout << "========================================================================\n";
-    std::cout << " [5] Matrix-Element IV Rate, Charge Trapping & Trap Ionization (Burst 2)\n";
+    std::cout << " [5] Matrix-Element IV Rate [experimental], Trapping & Trap Ionization\n";
     std::cout << "========================================================================\n";
 
     CrystalConfig si_cfg = materials::Silicon();
@@ -270,7 +278,7 @@ static void run_charge_trapping_demo() {
     CrystalLattice si_lat(si_cfg);
 
     DetectorModel det{};
-    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
+    det.allow_unvalidated = true;   // exercises an experimental module (docs/validation.md)
     det.e_field = UniformElectricField::from_bias(6.0 * units::Volt, 2.0 * det.solid.half_z);
     det.luke_sample_fraction = 0.0; // Focus on charge transport only
     SimulationEngine engine(si_lat, det);
@@ -300,11 +308,11 @@ static void run_charge_trapping_demo() {
 }
 
 // ============================================================================
-// 6. All 5 NIEL Partition Models & Exact Fano Binomial Verification (Burst 3)
+// 6. Nuclear-recoil ionization yield models and Fano binomial sampling
 // ============================================================================
 static void run_niel_fano_demo() {
     std::cout << "========================================================================\n";
-    std::cout << " [6] All 5 NIEL Ionization Models & Exact Fano Binomial (Burst 3)\n";
+    std::cout << " [6] Nuclear-Recoil Ionization Yield Models & Fano Binomial\n";
     std::cout << "========================================================================\n";
 
     const CrystalConfig si_cfg = materials::Silicon();
@@ -343,11 +351,11 @@ static void run_niel_fano_demo() {
 }
 
 // ============================================================================
-// 7. 3D Superconducting Bogoliubov Quasiparticle Coupled Cascade (Burst 4)
+// 7. Coupled bulk Bogoliubov quasiparticle + phonon cascade [experimental]
 // ============================================================================
-static void run_superconductor_3d_demo() {
+static void run_bulk_superconductor_demo() {
     std::cout << "========================================================================\n";
-    std::cout << " [7] 3D Superconducting Bogoliubov QP + Phonon Coupled Cascade (Burst 4)\n";
+    std::cout << " [7] Bulk Bogoliubov QP + Phonon Coupled Cascade [experimental]\n";
     std::cout << "========================================================================\n";
 
     CrystalConfig al_cfg = materials::AluminumCrystal();
@@ -356,7 +364,7 @@ static void run_superconductor_3d_demo() {
     CrystalLattice al_sc(al_cfg);
 
     DetectorModel sc_det{};
-    sc_det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
+    sc_det.allow_unvalidated = true;   // exercises an experimental module (docs/validation.md)
     sc_det.solid.radius = 2.0 * units::mm;
     sc_det.solid.half_z = 0.5 * units::um;     // 1 um thick 3D superconducting Al film
     sc_det.surfaces[0].prob_abs = 0.05;        // 5% tunnel junction / collector pad absorption
@@ -400,11 +408,11 @@ static void run_superconductor_3d_demo() {
 }
 
 // ============================================================================
-// 8. 3D/2D Tetrahedral FEM Mesh Field + Patterned 2D Electrode Mask (Burst 5)
+// 8. FEM mesh electric fields and patterned electrode masks
 // ============================================================================
 static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
-    std::cout << " [8] 3D/2D FEM Mesh Electric Field + Patterned 2D QET Mask (Burst 5)\n";
+    std::cout << " [8] 3D/2D FEM Mesh Electric Field + Patterned 2D QET Mask\n";
     std::cout << "========================================================================\n";
 
     // (a) Build a 3D Kuhn-tetrahedralized FEM mesh (12x12x12 hex cells = 10,368 tetrahedra)
@@ -431,14 +439,14 @@ static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
     const Vec3 E_3d = mesh_3d.at(test_pt);
     const Vec3 E_2d = mesh_2d.at(test_pt);
 
-    // (b) Configure detector with 3D Tetrahedral FEM field and 5-channel SuperCDMS QET mask on TopFace
+    // (b) Configure detector with 3D Tetrahedral FEM field and five-channel QET mask on TopFace
     DetectorModel det{};
     det.solid.radius = R;
     det.solid.half_z = H;
     det.mesh_field_3d = mesh_3d;
     det.luke_sample_fraction = 0.05;
     det.surfaces[static_cast<size_t>(SurfaceId::TopFace)].electrode_mask =
-        geometry::ElectrodePatternMask::supercdms_qet_mask(R, /*fill_fraction=*/0.85);
+        geometry::ElectrodePatternMask::five_channel_qet_mask(R, /*fill_fraction=*/0.85);
 
     SimulationEngine engine(ge_lattice, det);
     EnergyPartition partitioner(ge_lattice);
@@ -492,16 +500,16 @@ static void run_mesh_field_and_mask_demo(const CrystalLattice& ge_lattice) {
 }
 
 // ============================================================================
-// 9. Tier-4 Algorithmic Physics Shortcuts: Jump-to-Ballistic & HV Chord Luke (Burst 6)
+// 9. Jump-to-ballistic shortcut [experimental] and high-voltage Luke drift
 // ============================================================================
-static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
+static void run_jump_to_ballistic_and_hv_benchmark(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
-    std::cout << " [9] Tier-4 Physics Shortcuts: Jump-to-Ballistic & 50V Chord Luke (Burst 6)\n";
+    std::cout << " [9] Jump-to-Ballistic [experimental] & 50 V Luke Drift (Leman stepping)\n";
     std::cout << "========================================================================\n";
 
     // (a) Compare Standard Microscopic Cascade vs Jump-to-Ballistic on 200 Debye Phonons
     DetectorModel det_std{};
-    det_std.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
+    det_std.allow_unvalidated = true;   // exercises an experimental module (docs/validation.md)
     det_std.surfaces[0].kaplan_sensor = std::nullopt;
     det_std.surfaces[0].prob_abs = 1.0;
     det_std.surfaces[1].kaplan_sensor = std::nullopt;
@@ -538,7 +546,7 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
     const double ms_std = std::chrono::duration<double, std::milli>(t1 - t0).count();
     const double ms_jtb = std::chrono::duration<double, std::milli>(t2 - t1).count();
 
-    // (b) High-Voltage 50 V CDMSlite Recoil using Macroscopic Chord Luke Stepping
+    // (b) High-voltage (50 V) recoil with Leman second-order charge stepping
     constexpr double HV_BIAS = 50.0 * units::Volt;
     DetectorModel det_hv = det_jtb;
     det_hv.e_field = UniformElectricField::from_bias(HV_BIAS, 2.0 * det_hv.solid.half_z);
@@ -570,7 +578,7 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
               << " ms) vs " << st_std.total_steps << " std steps (" << ms_std << " ms) -> "
               << (static_cast<double>(st_std.total_steps) / std::max<uint64_t>(1, st_jtb.total_steps))
               << "x fewer ray steps\n"
-              << "  50V HV Chord Luke Steps  : " << st_hv.charge_steps << " chord steps for "
+              << "  50V HV Luke Charge Steps: " << st_hv.charge_steps << " steps for "
               << (res_hv.n_pairs_true * 2) << " carriers (" << st_hv.luke_phonons_emitted
               << " equiv Luke phonons)\n"
               << "  50V HV Total Calorimeter : " << measured_hv_eV << " eV (Expected "
@@ -579,15 +587,15 @@ static void run_fast_shortcuts_benchmark(const CrystalLattice& ge_lattice) {
 }
 
 // ============================================================================
-// 10. Tier-2 16-Wide SIMD Structure-of-Arrays (SoA) Wavefront Kernel (Burst 7)
+// 10. 16-wide SIMD structure-of-arrays wavefront kernel [experimental]
 // ============================================================================
 static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
-    std::cout << " [10] Tier-2 16-Wide SIMD Structure-of-Arrays (SoA) Wavefront (Burst 7)\n";
+    std::cout << " [10] 16-Wide SIMD Structure-of-Arrays Wavefront [experimental]\n";
     std::cout << "========================================================================\n";
 
     DetectorModel det{};
-    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
+    det.allow_unvalidated = true;   // exercises an experimental module (docs/validation.md)
     experimental::WavefrontSoAEngine soa_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
@@ -617,15 +625,15 @@ static void run_simd_soa_benchmark(const CrystalLattice& ge_lattice) {
 }
 
 // ============================================================================
-// 11. Tier-3 GPU-Ready 4-Stage Wavefront Queue Pipeline (Burst 8)
+// 11. Four-stage wavefront queue pipeline [experimental]
 // ============================================================================
-static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattice) {
+static void run_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
-    std::cout << " [11] Tier-3 GPU-Ready 4-Stage Wavefront Queue Pipeline (Burst 8)\n";
+    std::cout << " [11] 4-Stage Wavefront Queue Pipeline [experimental]\n";
     std::cout << "========================================================================\n";
 
     DetectorModel det{};
-    det.allow_unvalidated = true;   // benchmark of an UNVALIDATED module (VALIDATION.md)
+    det.allow_unvalidated = true;   // exercises an experimental module (docs/validation.md)
     experimental::WavefrontPipelineEngine wf_engine(ge_lattice, det);
     SimulationEngine scalar_engine(ge_lattice, det);
 
@@ -659,11 +667,11 @@ static void run_gpu_wavefront_pipeline_benchmark(const CrystalLattice& ge_lattic
 }
 
 // ============================================================================
-// 12. Primary Track Hit Merging (G4CMPHitMerging) & Sparse Sensor NEE (Burst 9)
+// 12. Primary-track hit merging and sparse-sensor next-event estimation (NEE is experimental)
 // ============================================================================
 static void run_hit_merging_and_nee_benchmark(const CrystalLattice& ge_lattice) {
     std::cout << "========================================================================\n";
-    std::cout << " [12] Primary Track Hit Merging (G4CMPHitMerging) & Sparse NEE (Burst 9)\n";
+    std::cout << " [12] Primary Track Hit Merging & Sparse-Sensor NEE [NEE experimental]\n";
     std::cout << "========================================================================\n";
 
     // Simulate a 20-substep ionizing electron track (each substep 200 um, 15 eV dE/dx)
@@ -744,11 +752,11 @@ int main(int argc, char** argv) {
     run_crystal_symmetries_demo();
     run_charge_trapping_demo();
     run_niel_fano_demo();
-    run_superconductor_3d_demo();
+    run_bulk_superconductor_demo();
     run_mesh_field_and_mask_demo(ge_lattice);
-    run_fast_shortcuts_benchmark(ge_lattice);
+    run_jump_to_ballistic_and_hv_benchmark(ge_lattice);
     run_simd_soa_benchmark(ge_lattice);
-    run_gpu_wavefront_pipeline_benchmark(ge_lattice);
+    run_wavefront_pipeline_benchmark(ge_lattice);
     run_hit_merging_and_nee_benchmark(ge_lattice);
 
     return 0;

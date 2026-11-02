@@ -8,16 +8,40 @@
 
 namespace cmpmc::io {
 
-// ============================================================================
-// G4CMP `config.txt` File Parser (Replaces G4LatticeReader)
-// Reads any `CrystalMaps/*/config.txt` file directly into a `CrystalConfig`.
-// ============================================================================
+// Import of crystal parameters from the G4CMP `config.txt` lattice format
+// (the files of a G4CMP `CrystalMaps/<material>/` directory) into a CrystalConfig.
+//
+// Format: one `key values... [unit]` entry per line; `#` starts a comment.
+// Unknown keys are ignored. Supported keys:
+//   amorphous | cubic | tetragonal | orthorhombic | hexagonal | rhombohedral |
+//   monoclinic | triclinic                 crystal symmetry group
+//   stiffness i j value unit              elastic constant C_ij (Voigt indices)
+//   dyn beta gamma lambda mu unit         third-order (anharmonic) constants
+//   scat B                                isotope scattering constant (s^3)
+//   decay A                               anharmonic decay constant (s^4)
+//   decayTT f                             L -> TT branching fraction
+//   LDOS | STDOS | FTDOS f                mode density-of-states fractions
+//   Debye value unit                      Debye frequency
+//   vsound | vtrans value unit            longitudinal / transverse sound speed
+//   bandgap | pairEnergy value unit       band gap, electron-hole pair energy
+//   fanoFactor F                          Fano factor
+//   hmass m                               hole mass ratio m_h / m_e
+//   emass m1 m2 m3                        electron mass tensor (valley frame, / m_e)
+//   valleyDir x y z                       conduction-valley axis (repeatable)
+//   acDeform_e | acDeform_h value unit    acoustic deformation potentials
+//   sc_tau0_qp | sc_tau0_ph value unit    superconductor characteristic times
+// Recognised units: GPa, Pa, THz, GHz, Hz, eV, meV, ueV, m/s, km/s, ns, ps, s,
+// V/m, V/cm, eV/cm, /cm3. An unrecognised unit is treated as 1 (SI).
+//
+// The format carries no density, so it is passed in. If no valleyDir is given, a
+// single valley along [100] is assumed. Throws std::runtime_error if the file
+// cannot be opened.
 inline CrystalConfig import_g4cmp_config(const std::string& filepath,
                                             double density_kg_m3 = 5323.0,
                                             const std::string& name = "Custom") {
     std::ifstream in(filepath);
     if (!in.is_open()) {
-        throw std::runtime_error("Unable to open G4CMP crystal config file: " + filepath);
+        throw std::runtime_error("cmpmc::io::import_g4cmp_config: cannot open " + filepath);
     }
 
     CrystalConfig cfg{};

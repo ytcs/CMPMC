@@ -9,14 +9,16 @@
 
 namespace cmpmc::experimental {
 
-// ============================================================================
-// Next-Event Estimation (NEE / Shadow Rays) for Sparse Surface Sensors
+// Next-event estimation (shadow rays) onto a sparse sensor pad.
 //    At a diffuse boundary reflection at `refl_pos` with `inward_normal`,
 //    projects a deterministic weighted contribution directly onto a small
 //    circular sensor pad (center `pad_center`, radius `pad_radius`, normal
 //    `pad_inward_normal`) using the Lambertian solid-angle view factor:
 //      dP_NEE = (cos(theta_emit) * cos(theta_inc) * Area_pad) / (pi * R^2)
-// ============================================================================
+//    Returns the weighted energy contribution (eV) and sets out_flight_time_s.
+//    Known limitation: a real-space Lambertian estimator that ignores phonon
+//    focusing (biased whenever v_g is not parallel to k), and it is not called by
+//    SimulationEngine.
 inline double evaluate_sparse_sensor_nee(const Vec3& refl_pos,
                                          const Vec3& refl_inward_normal,
                                          const Vec3& pad_center,

@@ -15,6 +15,7 @@ set(CMPMC_TESTS
     "test_surface|phonon,validation"
     "test_interface_amm|phonon,validation"
     "test_presets|materials,validation"
+    "test_config_import|materials,unit"
     "test_g4cmp_import|materials,external-data"
     "test_kaplan|superconductor,validation"
     "test_pair_breaking|superconductor,validation"
@@ -44,3 +45,16 @@ endforeach()
 
 set_tests_properties(test_g4cmp_import PROPERTIES
     ENVIRONMENT "CMPMC_G4CMP_CRYSTALMAPS_DIR=${CMPMC_G4CMP_CRYSTALMAPS_DIR}")
+
+# Every public header must compile on its own (one translation unit per header).
+file(GLOB_RECURSE CMPMC_PUBLIC_HEADERS RELATIVE ${PROJECT_SOURCE_DIR}/include
+     CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/include/cmpmc/*.hpp)
+set(CMPMC_HEADER_CHECK_SOURCES "")
+foreach(header IN LISTS CMPMC_PUBLIC_HEADERS)
+    string(MAKE_C_IDENTIFIER "${header}" stem)
+    set(src ${CMAKE_CURRENT_BINARY_DIR}/header_check/${stem}.cpp)
+    file(CONFIGURE OUTPUT ${src} CONTENT "#include \"${header}\"\n")
+    list(APPEND CMPMC_HEADER_CHECK_SOURCES ${src})
+endforeach()
+add_library(cmpmc_header_check OBJECT ${CMPMC_HEADER_CHECK_SOURCES})
+target_link_libraries(cmpmc_header_check PRIVATE cmpmc::cmpmc cmpmc_build_options)

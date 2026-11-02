@@ -1,8 +1,7 @@
-// Audit test: Tamura/Leman anharmonic L-phonon decay in the isotropic approximation.
+// Anharmonic L-phonon decay in the isotropic approximation.
 //  (a) daughter angles conserve crystal momentum (k_L = k_1 + k_2) for every allowed x;
 //  (b) daughter energy-fraction distributions sampled from CMPMC's inverse-CDF tables
-//      match Leman, arXiv:1109.1193, Eqs. (9) and (12) [the G4CMP GetLTDecayProb /
-//      GetTTDecayProb forms], integrated independently here;
+//      match Leman, arXiv:1109.1193, Eqs. (9) and (12), integrated independently here;
 //  (c) energy conservation per decay (exact by construction, checked on samples).
 #include "test_support.hpp"
 #include "cmpmc/lattice/crystal_lattice.hpp"
@@ -18,7 +17,7 @@ static double leman_lt(double d, double x) {
     return (a * a / (x * x)) * b * c * c;
 }
 // Leman (12): L -> T + T in Leman's variable X = d * E_T1/E_L, (d-1)/2 < X < (d+1)/2;
-// beta, gamma, lambda, mu in units of 1e11 Pa (G4CMPAnharmonicDecay convention).
+// beta, gamma, lambda, mu in units of 1e11 Pa (the convention of the crystal configuration).
 static double leman_tt(double d, double X, const CrystalConfig& c) {
     const double be = c.beta / 1e11, ga = c.gamma / 1e11, la = c.lambda / 1e11, mu = c.mu / 1e11;
     const double A = 0.5 * (1 - d * d) * (be + la + (1 + d * d) * (ga + mu));

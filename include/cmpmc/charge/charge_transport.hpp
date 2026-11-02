@@ -1,5 +1,8 @@
 #pragma once
 
+// Charge-carrier transport primitives: the uniform field model and ChargePhysics,
+// which the transport engine calls for every electron/hole step.
+
 #include "cmpmc/core/core.hpp"
 #include "cmpmc/lattice/crystal_lattice.hpp"
 #include <algorithm>
@@ -8,10 +11,8 @@
 
 namespace cmpmc {
 
-// ============================================================================
-// ElectricField: Bias Voltage & 3D Field Evaluator
-// Replaces: G4CMPFieldUtils & G4CMPMeshElectricField
-// ============================================================================
+// Uniform electric field, e.g. from a bias voltage across a planar detector.
+// Non-uniform fields are provided by the mesh interpolators in cmpmc/geometry/mesh_field.hpp.
 struct UniformElectricField {
     Vec3 field_Vm = {0.0, 0.0, 0.0}; // Electric field E in V/m
 
@@ -34,12 +35,9 @@ struct LukePhononEmit {
     double phonon_eV;    // Emitted phonon energy (eV)
 };
 
-// ============================================================================
-// ChargePhysics: Herring-Vogt Drift, Neganov-Trofimov-Luke Phonon Emission,
-// and Intervalley Scattering
-// Replaces: G4CMPVDriftProcess, G4CMPTimeStepper, G4CMPLukeScattering,
-//           G4CMPLukeEmissionRate, G4CMPInterValleyScattering
-// ============================================================================
+// ChargePhysics: per-carrier physics for drifting electrons and holes:
+// Herring-Vogt kinematics, Neganov-Trofimov-Luke phonon emission, intervalley
+// scattering, and boundary absorption / reflection.
 class ChargePhysics {
 public:
     explicit constexpr ChargePhysics(const CrystalLattice& lattice) noexcept
@@ -182,7 +180,7 @@ public:
         trk.p_eV   = lattice_.map_ekin_to_p_electron(new_valley, p_new_dir, trk.ekin);
     }
 
-    // Check if charge carrier is absorbed at a boundary (G4CMPDriftBoundaryProcess::AbsorbTrack)
+    // Check if charge carrier is absorbed at a boundary
     inline bool should_absorb_boundary(const ChargeTrack& trk,
                                        const Vec3& inward_normal,
                                        double prob_charge_abs,
@@ -198,7 +196,7 @@ public:
     }
 
     // Specular or diffuse reflection of a charge carrier at a crystal boundary
-    // conserving kinetic energy in the current valley (G4CMPDriftBoundaryProcess::DoReflection)
+    // conserving kinetic energy in the current valley
     inline void reflect_at_boundary(ChargeTrack& trk,
                                     const Vec3& inward_normal,
                                     double spec_prob,

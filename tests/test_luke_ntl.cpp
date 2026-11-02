@@ -1,10 +1,9 @@
-// Audit test: charge drift and Neganov-Trofimov-Luke (NTL) emission.
-//  (a) l0 = pi hbar^4 rho / (2 m^3 Xi^2) vs Leman 1109.1193 Table II [FT];
+// Charge drift and Neganov-Trofimov-Luke (NTL) emission.
+//  (a) l0 = pi hbar^4 rho / (2 m^3 Xi^2) vs Leman, arXiv:1109.1193, Table II;
 //  (b) implemented emission rate vs the theta-integral of Leman Eq. (22)
 //      P(theta) dtheta = (v/l0)(k/k_s)^2 (cos theta - k_s/k)^2 sin theta dtheta;
 //  (c) sampled emission angle and phonon energy vs the same density;
-//  (d) energy closure per carrier in a uniform field (campaign WP7-E-v3 (E11):
-//      NTL heat = W_bias = e V_b per collected pair; per carrier: sum E_Luke +
+//  (d) energy closure per carrier in a uniform field (NTL heat = W_bias = e V_b per collected pair; per carrier: sum E_Luke +
 //      E_kin(final) - E_kin(initial) = e E . (r_final - r_initial));
 //  (e) step-size convergence of the NTL phonon spectrum (mean, q90 of E_Luke).
 #include "test_support.hpp"
@@ -41,8 +40,13 @@ static void rate_and_angles(const CrystalConfig& cfg) {
         cmpmc_test::info(n + " ratio to Leman (21) [(M-1)^3/M^2 form]", cp.luke_emission_rate(h) / ((v / (3 * l0)) * std::pow(M - 1, 3) / (M * M)));
         // sampled cos(theta) and phonon energy
         double sc = 0, se = 0; const int NS = 400000;
-        for (int i = 0; i < NS; ++i) { ChargeTrack t = h; const auto e = cp.emit_luke_phonon(t, rng);
-            if (!e.emitted) continue; sc += e.q_dir.dot(Vec3{0, 0, 1}); se += e.phonon_eV; }
+        for (int i = 0; i < NS; ++i) {
+            ChargeTrack t = h;
+            const auto e = cp.emit_luke_phonon(t, rng);
+            if (!e.emitted) continue;
+            sc += e.q_dir.dot(Vec3{0, 0, 1});
+            se += e.phonon_eV;
+        }
         // reference moments of p(c) ~ (c - 1/M)^2 on [1/M, 1]: <c> = 1/M + (3/4)(1 - 1/M)
         const double a = 1.0 / M, mc = a + 0.75 * (1 - a);
         // E_ph = hbar v q, q = 2 k (c - 1/M): <E> = hbar v 2 k (3/4)(1 - 1/M)
@@ -62,11 +66,7 @@ static DriftResult drift(const CrystalConfig& cfg, ExcitationType type, double E
     det.solid.half_z = 0.5 * thick;
     det.e_field = UniformElectricField{{0.0, 0.0, -E_Vm}};
     det.surfaces[0].prob_charge_abs = 1.0; det.surfaces[1].prob_charge_abs = 1.0; det.surfaces[2].prob_charge_abs = 1.0;
-#ifndef CMPMC_AUDIT_REF
     det.charge_max_dk_frac = dk_frac;
-#else
-    (void)dk_frac;
-#endif
     const SimulationEngine eng(lat, det);
     const ChargePhysics cp(lat);
     Rng rng(2024);
@@ -103,21 +103,15 @@ int main() {
                                       "E=" + std::to_string(int(E)) + "V/m";
                 const double thick = 1e-3;
                 const DriftResult coarse = drift(cfg, type, E, thick, 20, 0.0);
-#ifdef CMPMC_AUDIT_REF
-                cmpmc_test::check(n + " (E11) closure, legacy step", coarse.closure_worst, 0.0, 0.0, 1e-3);
-#else
-                cmpmc_test::info(n + " (E11) closure error, legacy step (charge_max_dk_frac = 0)", coarse.closure_worst);
-#endif
-                cmpmc_test::info(n + " <E_Luke> meV, legacy step", coarse.e_mean * 1e3);
-                cmpmc_test::info(n + " q90 E_Luke meV, legacy step", coarse.e_q90 * 1e3);
-#ifndef CMPMC_AUDIT_REF
+                cmpmc_test::info(n + " energy closure error, fixed-time step (charge_max_dk_frac = 0)", coarse.closure_worst);
+                cmpmc_test::info(n + " <E_Luke> meV, fixed-time step", coarse.e_mean * 1e3);
+                cmpmc_test::info(n + " q90 E_Luke meV, fixed-time step", coarse.e_q90 * 1e3);
                 const DriftResult fine = drift(cfg, type, E, thick, 20, 0.05);
                 const DriftResult finer = drift(cfg, type, E, thick, 20, 0.02);
-                cmpmc_test::check(n + " (E11) closure, dk-limited step", fine.closure_worst, 0.0, 0.0, 1e-3);
+                cmpmc_test::check(n + " energy closure, dk-limited step", fine.closure_worst, 0.0, 0.0, 1e-3);
                 cmpmc_test::info(n + " <E_Luke> meV, dk <= 0.05 k_s", fine.e_mean * 1e3);
                 cmpmc_test::info(n + " q90 E_Luke meV, dk <= 0.05 k_s", fine.e_q90 * 1e3);
                 cmpmc_test::check(n + " <E_Luke> converged (0.05 vs 0.02 k_s, 5%)", fine.e_mean, finer.e_mean, 0.05);
-#endif
             }
         }
     }

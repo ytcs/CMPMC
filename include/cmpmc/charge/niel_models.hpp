@@ -1,5 +1,7 @@
 #pragma once
 
+// Nuclear-recoil ionisation-yield models and Fano pair-number sampling.
+
 #include "cmpmc/core/rng.hpp"
 #include "cmpmc/core/units.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
@@ -10,17 +12,15 @@
 
 namespace cmpmc::physics {
 
-// ============================================================================
-// Pure Nuclear Recoil Ionization Yield (NIEL) Models & Fano Binomial Sampler
-//
-// Human-readable implementations of all 5 G4CMP NIEL partition models:
-//   1. Lindhard & Robinson (1963)           (G4CMPLindhardNIEL)
-//   2. Lewin & Smith (1996)                 (G4CMPLewinSmithNIEL)
-//   3. Sarkis et al., PRA 107, 062811 (2023)(G4CMPSarkisNIEL - Silicon >= 47.8 eV)
-//   4. IMPACT@TUNL, PRL 131, 091801 (2023)  (G4CMPImpactTunlNIEL - Silicon <= 10 keV)
-//   5. CDMSlite Empirical k(E), PRD 105 (2022) (G4CMPEmpiricalNIEL)
-// Plus the exact CDMS HVeV interpolated Fano Binomial sampler (G4CMPFanoBinomial).
-// ============================================================================
+// Nuclear-recoil ionisation-yield (NIEL partition) models and the Fano binomial
+// pair-number sampler:
+//   1. Lindhard & Robinson (1963)
+//   2. Lewin & Smith (1996)
+//   3. Sarkis et al., PRA 107, 062811 (2023)   (silicon, E >= 47.8 eV)
+//   4. IMPACT@TUNL, PRL 131, 091801 (2023)     (silicon, E <= 10 keV)
+//   5. CDMSlite empirical k(E), PRD 105 (2022)
+// plus the interpolated Fano binomial sampler (CDMS HVeV Run 1 data release, 2019).
+// The model set and parameterisations follow G4CMP.
 
 enum class NIELModel : uint8_t {
     Lindhard   = 0,
@@ -39,7 +39,7 @@ struct EmpiricalNIELParams {
     double e_high_eV        = 2000.0 * units::eV;
 };
 
-// --- 1. Lindhard & Robinson (1963) Ionization Yield (G4CMPLindhardNIEL) ---
+// --- 1. Lindhard & Robinson (1963) Ionization Yield ---
 inline double lindhard_ionization_yield(double energy_eV,
                                         const CrystalConfig& cfg,
                                         double z1 = 0.0,
@@ -64,7 +64,7 @@ inline double lindhard_ionization_yield(double energy_eV,
     return numer / (1.0 + numer);
 }
 
-// --- 2. Lewin & Smith (1996) Ionization Yield (G4CMPLewinSmithNIEL) ---
+// --- 2. Lewin & Smith (1996) Ionization Yield ---
 inline double lewin_smith_ionization_yield(double energy_eV, const CrystalConfig& cfg) noexcept {
     if (energy_eV <= 0.0) return 0.0;
     const double Z = cfg.atomic_Z;
@@ -76,7 +76,7 @@ inline double lewin_smith_ionization_yield(double energy_eV, const CrystalConfig
     return (k * h) / (1.0 + k * h);
 }
 
-// --- 3. IMPACT@TUNL (2023) Silicon Power-Law Yield (G4CMPImpactTunlNIEL) ---
+// --- 3. IMPACT@TUNL (2023) Silicon Power-Law Yield ---
 // Reference: PRL 131, 091801 (2023) — Y(E_r) = Y10 * (E_r / 10 keV)^B for Si <= 10 keV
 inline double impact_tunl_ionization_yield(double energy_eV, const CrystalConfig& cfg) noexcept {
     if (energy_eV <= 0.0) return 0.0;
@@ -89,7 +89,7 @@ inline double impact_tunl_ionization_yield(double energy_eV, const CrystalConfig
     return lewin_smith_ionization_yield(energy_eV, cfg);
 }
 
-// --- 4. Sarkis et al. (2023) Silicon Ionization Yield (G4CMPSarkisNIEL) ---
+// --- 4. Sarkis et al. (2023) Silicon Ionization Yield ---
 // Reference: Phys. Rev. A 107, 062811 (2023) — Silicon nuclear recoil yield down to 47.83 eV
 inline double sarkis_ionization_yield(double energy_eV, const CrystalConfig& cfg) noexcept {
     if (energy_eV <= 0.0) return 0.0;
@@ -130,7 +130,7 @@ inline double sarkis_ionization_yield(double energy_eV, const CrystalConfig& cfg
     return k0.yield + t * (k1.yield - k0.yield);
 }
 
-// --- 5. CDMSlite Empirical k(E) Ionization Yield (G4CMPEmpiricalNIEL) ---
+// --- 5. CDMSlite Empirical k(E) Ionization Yield ---
 // Reference: Phys. Rev. D 105, 122002 (2022)
 inline double empirical_ionization_yield(double energy_eV,
                                          const CrystalConfig& cfg,
@@ -169,8 +169,8 @@ inline double compute_ionization_yield(NIELModel model,
     return lindhard_ionization_yield(energy_eV, cfg);
 }
 
-// --- 6. Exact Fano Interpolated Binomial Sampler (G4CMPFanoBinomial) ---
-// Reference: CDMS HVeV Run 1 Data Release (2019) & G4CMPFanoBinomial.cc
+// --- 6. Interpolated Fano Binomial Sampler ---
+// Reference: CDMS HVeV Run 1 data release (2019)
 namespace detail {
 
 inline double choose_binom(int64_t n, int64_t x) noexcept {
@@ -219,7 +219,7 @@ inline uint64_t sample_fano_binomial(double mean, double fano, Rng& rng) noexcep
     const double prob = std::clamp(1.0 - fano, 1e-6, 1.0 - 1e-6);
     const double ntry = mean / prob;
 
-    // Gaussian limit for large N (matches G4CMPFanoBinomial::genBinomial threshold)
+    // Gaussian limit for large N (same threshold as G4CMP)
     if (mean > 9.0 * (fano / prob) && mean > 9.0 * (prob / fano)) {
         const double sampled = std::round(mean + std::sqrt(mean * fano) * rng.normal());
         return static_cast<uint64_t>(std::max(1.0, sampled));

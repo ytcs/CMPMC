@@ -1,4 +1,4 @@
-// R16 test: isotropic AMM / DMM phonon interface transmission (physics/interface_transmission.hpp)
+// Isotropic AMM / DMM phonon interface transmission (phonon/interface_transmission.hpp)
 //  (a) P-SV oblique AMM: energy-flux conservation R_P + R_S + T_P + T_S = 1 at every angle and
 //      both incident modes (not imposed by the solver: an independent check of the 4x4 boundary
 //      problem), for Si/Al, Ge/Al, Si/W, Al2O3/Al;
@@ -6,10 +6,11 @@
 //      conversion at theta = 0;
 //  (c) identical media: T = 1, R = 0 at all angles;
 //  (d) reciprocity of SH transmission T_12(theta1) = T_21(theta2);
-//  (e) campaign WP8-R Sec. 3.2 table (AMM L-normal, T-normal, SH flux average, DMM) for the six
-//      substrate/film pairs, inputs as in WP8-R Sec. 3.1 / code/WP8-R/checks.py (Si, Ge: 1109.1193
-//      Table I [FT]; Al2O3: 2408.04732 Table 3 [FT] + AFLOW rho [DB]; W, Ti: AFLOW [DB]; Al, Ir:
-//      moduli [UNVERIFIED], test inputs only), to the table's 3 printed digits (0.0006);
+//  (e) reference table (AMM L-normal, T-normal, SH flux average, DMM) for six substrate/film
+//      pairs, computed independently from the same inputs and quoted to 3 digits (tolerance
+//      0.0006). Inputs: Si, Ge from Leman, arXiv:1109.1193, Table I; Al2O3 from arXiv:2408.04732,
+//      Table 3, with the AFLOW density (database value); W, Ti: AFLOW (database values);
+//      Al, Ir: moduli not independently verified, used as test inputs only;
 //  (f) DMM detailed balance t_12 + t_21 = 1.
 #include "test_support.hpp"
 #include "cmpmc/phonon/interface_transmission.hpp"
@@ -55,10 +56,10 @@ int main() {
         for (int i = 0; i < NA; ++i) { const double th = (i + 0.5) / NA * 1.5707963267948966;
             sh += amm_sh(pr.s, pr.f, th) * 2 * std::sin(th) * std::cos(th); }
         sh *= 1.5707963267948966 / NA;
-        cmpmc_test::check(n + " AMM L normal vs WP8-R 3.2", P0.T_P, pr.L, 0.0, 6e-4);
-        cmpmc_test::check(n + " AMM T normal vs WP8-R 3.2", S0.T_S, pr.T, 0.0, 6e-4);
-        cmpmc_test::check(n + " AMM SH flux avg vs WP8-R 3.2", sh, pr.SH, 0.0, 6e-4);
-        cmpmc_test::check(n + " DMM vs WP8-R 3.2", dmm(pr.s, pr.f), pr.D, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM L normal vs reference table", P0.T_P, pr.L, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM T normal vs reference table", S0.T_S, pr.T, 0.0, 6e-4);
+        cmpmc_test::check(n + " AMM SH flux avg vs reference table", sh, pr.SH, 0.0, 6e-4);
+        cmpmc_test::check(n + " DMM vs reference table", dmm(pr.s, pr.f), pr.D, 0.0, 6e-4);
         // (f)
         cmpmc_test::check(n + " DMM t12 + t21", dmm(pr.s, pr.f) + dmm(pr.f, pr.s), 1.0, 1e-14);
         const IsotropicAMMInterface I{pr.s, pr.f};

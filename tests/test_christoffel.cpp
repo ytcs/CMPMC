@@ -1,4 +1,4 @@
-// Audit test: Christoffel solver and group-velocity lookup tables.
+// Christoffel solver and group-velocity lookup tables.
 //  (a) phase velocities along [100], [110], [111] vs the closed cubic forms;
 //  (b) group velocity vs a central finite difference of omega(k) = |k| v_p(k_hat);
 //  (c) error of the bilinear (cos theta, phi) LUT (map_k_to_vg) and of the FP32
@@ -109,7 +109,6 @@ static void timing() {
     if (sink == 42.0) std::printf("x");
 }
 
-#ifndef CMPMC_AUDIT_REF
 static void exact_mode() {
     CrystalLattice lat(materials::Germanium());
     lat.set_kinematics_mode(CrystalLattice::KinematicsMode::Exact);
@@ -120,12 +119,9 @@ static void exact_mode() {
         worst = std::max(worst, (lat.map_k_to_vg(PhononMode::L, k).vg_dir - vg[0].unit()).norm()); }
     cmpmc_test::check("Ge Exact kinematics mode max dir err (rad)", worst, 0.0, 0.0, 1e-9);
 }
-#endif
 
 int main() {
-#ifndef CMPMC_AUDIT_REF
     exact_mode();
-#endif
     timing();
     std::printf("# test_christoffel\n");
     run_cubic(materials::Germanium());

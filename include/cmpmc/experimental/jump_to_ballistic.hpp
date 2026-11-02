@@ -25,7 +25,7 @@ struct JumpToBallisticConfig {
 
 // Perform an in-register diffusive + anharmonic downconversion cascade for a
 // high-frequency phonon located at least `safety_margin_mfp * lambda_tot` inside
-// the crystal bulk, without touching the geometry navigator on intermediate steps.
+// the crystal bulk, without geometry queries on intermediate steps.
 // Preserves exact energy conservation (sum of daughter energies == trk.energy).
 inline uint32_t jump_to_ballistic_cascade(PhononTrack& trk,
                                           double wall_clearance_m,

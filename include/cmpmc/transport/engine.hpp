@@ -15,8 +15,14 @@
 #include <cstdint>
 #include <vector>
 
+// SimulationEngine: event transport of phonons, charge carriers, Bogoliubov
+// quasiparticles and user-defined excitations through a DetectorModel (crystal
+// solid, electric field, per-surface boundary models).
+
 namespace cmpmc {
 
+// Counters and energy bookkeeping accumulated by the transport routines.
+// Energies are in eV and weighted by the track statistical weight.
 struct SimStats {
     // Phonon statistics
     uint64_t total_steps          = 0;
@@ -83,9 +89,7 @@ struct SimStats {
     }
 };
 
-// ============================================================================
-// DetectorModel & Unified Multi-Excitation SimulationEngine
-// ============================================================================
+// Detector description and transport settings consumed by SimulationEngine.
 struct DetectorModel {
     CylinderSolid solid{};
     UniformElectricField e_field = UniformElectricField::from_bias(0.0, 2.54 * units::cm);
@@ -102,37 +106,41 @@ struct DetectorModel {
     // Charge step control: the field may change the carrier wavevector by at most
     // charge_max_dk_frac * max(k_s, |k|) per step (HV frame for electrons), so that the
     // Luke rate (v/3l0)(M-1)^3/M sampled at the start of a step stays ~constant over it
-    // (Leman 1109.1193 Sec. V.D). 0 restores the legacy fixed 100 ps cap.
+    // (Leman, arXiv:1109.1193, Sec. V.D). 0 disables this bound, leaving only the
+    // fixed time cap charge_dt_cap_s.
     double charge_max_dk_frac  = 0.05;
     double charge_dt_cap_s     = 100.0 * units::ps;
-    // Charge time stepping: FirstOrderDkCap (R15 P5: rates frozen over a step bounded by
-    // charge_max_dk_frac) or LemanSecondOrder (1109.1193 Sec. V.E Eqs. (26)-(30): rate linear in
-    // time over a sampling step bounded by charge_sampling_dk_frac, inverse-CDF event time).
+    // Charge time stepping: FirstOrderDkCap (rates frozen over a step bounded by
+    // charge_max_dk_frac) or LemanSecondOrder (Leman, arXiv:1109.1193, Sec. V.E, Eqs. (26)-(30):
+    // rate linear in time over a sampling step bounded by charge_sampling_dk_frac, inverse-CDF
+    // event time).
     enum class ChargeStepping : uint8_t { FirstOrderDkCap, LemanSecondOrder };
     ChargeStepping charge_stepping   = ChargeStepping::FirstOrderDkCap;
     double charge_sampling_dk_frac   = 0.25;
 
-    // Energy released when a carrier is collected (campaign WP7-E-v3 Sec. 1.3 ledger, row
-    // "collection": E_pairs -> H_ph at the contact): E_rel = E_kin + (E_c - mu_F) for e-,
-    // E_kin + (mu_F - E_v) for h+. fermi_level_above_Ev_eV = mu_F - E_v (< 0: mid-gap, [E]).
-    //   RecordOnly        legacy: E_rel recorded as a SensorHit, no phonons emitted;
-    //   BulkDebye         E_rel emitted at the contact as hard phonons of h nu_D (bulk multiphonon
-    //                     release; WP8-R Sec. 1.2 item (b));
+    // Energy released when a carrier is collected at a contact (the pair energy returns to the
+    // phonon system there): E_rel = E_kin + (E_c - mu_F) for e-, E_kin + (mu_F - E_v) for h+, so an
+    // electron-hole pair at rest releases E_g. fermi_level_above_Ev_eV = mu_F - E_v
+    // (< 0 selects mid-gap, an estimate).
+    //   RecordOnly        E_rel recorded as a SensorHit, no phonons emitted (default);
+    //   BulkDebye         E_rel emitted at the contact as phonons of energy h nu_D (bulk
+    //                     multiphonon release);
     //   ElectrodeFilm     E_rel enters the surface's Kaplan film (the electrode): QPs are recorded as
-    //                     the hit (D N_qp + sub-gap absorption), and the phonons that escape the film
-    //                     are re-injected into the crystal (Lambertian, DOS modes): the soft, ballistic
-    //                     surface-recombination population of 1109.1193 p.17 [FT] (REF-WP8-R-A F2,
-    //                     -B B1). Surfaces without a Kaplan film fall back to RecordOnly.
+    //                     the hit (Delta N_qp + sub-gap absorption), and the phonons that escape the
+    //                     film are re-injected into the crystal (Lambertian, DOS-weighted modes): the
+    //                     low-frequency, ballistic surface-recombination phonons described by Leman,
+    //                     arXiv:1109.1193, p. 17. Surfaces without a Kaplan film fall back to
+    //                     RecordOnly.
     enum class ChargeRelease : uint8_t { RecordOnly, BulkDebye, ElectrodeFilm };
     ChargeRelease charge_release   = ChargeRelease::RecordOnly;
     double fermi_level_above_Ev_eV = -1.0;
     double electrode_seed_max_gap  = 80.0;   // ElectrodeFilm: E_rel enters as quanta of <= this x Delta (numerical)
 
-    // Tier-4 Algorithmic Physics Shortcuts (optional, disabled by default)
+    // Experimental jump-to-ballistic shortcut (disabled by default; requires allow_unvalidated)
     experimental::JumpToBallisticConfig jump_to_ballistic{};
-    // Opt-in for modules without a validated reference path (core/validation.hpp). Default off:
-    // jump-to-ballistic, fast-chord HV Luke, the SoA / GPU wavefront engines, the bulk 3D-QP
-    // transport, the IV Matrix rate and the G4CMP demo surface coefficients then throw.
+    // Opt-in for experimental modules (core/validation.hpp). With the default (false),
+    // jump-to-ballistic, the experimental wavefront engines, the bulk 3D-QP transport, the IV
+    // Matrix rate and the demonstration surface polynomials throw UnvalidatedModuleError.
     bool allow_unvalidated = false;
     uint32_t russian_roulette_bounces = 0;   // 0 = disabled; e.g. 64 for sparse sensors
     double russian_roulette_survival  = 0.5; // Survival probability per roulette check
@@ -144,6 +152,9 @@ struct DetectorModel {
     }
 };
 
+// Transport engine. Holds references to the lattice and detector, which must outlive it.
+// The transport routines are const: run threads concurrently with one Rng (and one set
+// of stacks, hits and stats) per thread.
 class SimulationEngine {
 public:
     SimulationEngine(const CrystalLattice& lattice, const DetectorModel& detector)
@@ -151,7 +162,7 @@ public:
         for (const auto& sp : detector_.surfaces)
             if (sp.demo_values)
                 require_validated(detector_.allow_unvalidated, "SurfaceProperty::demo_polynomial_*",
-                                  "G4CMP example reflection/down-conversion polynomials are demonstration values");
+                                  "demonstration reflection/down-conversion polynomials, not physically motivated");
     }
 
     inline PhononTrack make_track(const Vec3& pos, const Vec3& k_dir,
@@ -219,7 +230,7 @@ public:
                 }
                 double dt_phys;
                 if (second_order) {
-                    // Leman 1109.1193 Sec. V.E: rate linear over the sampling step,
+                    // Leman, arXiv:1109.1193, Sec. V.E: rate linear over the sampling step,
                     // Gamma(t) = a0 + a1 t, a0 = Gamma(t0) (Eq. (29)), a1 = (Gamma(t1) - Gamma(t0))/(t1 - t0)
                     // (Eq. (30)); event time t = (sqrt(a0^2 - 2 a1 ln u) - a0)/a1 (Eq. (28)).
                     ChargeTrack trial = trk;
@@ -321,7 +332,7 @@ public:
                     : lattice_.map_p_to_ekin_hole(trk.p_eV);
 
                 if (dt_phys <= dt_max_accel) {
-                    if (second_order) {   // process selection with the rates at the event (Leman step 7b)
+                    if (second_order) {   // process selection with the rates at the event (Leman, arXiv:1109.1193, Sec. V.E, step 7b)
                         const ChargeRates R = charge_rates(trk, E_Vm);
                         r_luke = R.luke; r_iv = R.iv; r_trap = R.trap; r_ion_e = R.ion_e; r_ion_h = R.ion_h; r_tot = R.tot;
                         if (r_tot <= 0.0) continue;
@@ -334,7 +345,7 @@ public:
                     } else if (u_proc < r_trap + r_ion_e + r_ion_h) {
                         stats.trap_ionizations++;
                         const bool lib_elec = (u_proc < r_trap + r_ion_e);
-                        const double e_knock = 1.0e-6 * units::eV; // G4CMPDriftTrapIonization knock-on energy
+                        const double e_knock = 1.0e-6 * units::eV; // knock-on energy of the liberated carrier
                         const size_t n_val = std::max<size_t>(1, lattice_.num_valleys());
                         const uint16_t kv = lib_elec ? static_cast<uint16_t>(rng.next_u64() % n_val) : 0;
                         ChargeTrack knockon = charge_phys_.make_charge(
@@ -367,11 +378,9 @@ public:
 
     // ========================================================================
     // 1b. Fast charge transport for high-voltage operation.
-    //     The former macroscopic-chord engine (Luke energies from a fixed Mach number 2.2 per
-    //     chord, collection without E_kin; R15 CMPMC-AUD Sec. 5 "DO NOT USE") is replaced by the
-    //     validated Leman second-order stepping (1109.1193 Sec. V.E Eqs. (26)-(30) [FT];
-    //     tests/test_leman_stepping), which is the large-step method with a reference.
-    //     max_chord_m is kept for source compatibility and is not used.
+    //     Runs transport_charges with Leman second-order stepping (Leman, arXiv:1109.1193,
+    //     Sec. V.E, Eqs. (26)-(30)), which takes large steps while keeping the Luke emission
+    //     rate accurate (see tests/test_leman_stepping). max_chord_m is ignored.
     // ========================================================================
     void transport_charges_fast_chord(std::vector<ChargeTrack>& charge_stack,
                                       std::vector<PhononTrack>& phonon_stack,
@@ -415,7 +424,7 @@ public:
                     break;
                 }
 
-                // Tier-4 Jump-to-Ballistic Downconversion Shortcut (if enabled)
+                // Experimental jump-to-ballistic down-conversion shortcut (if enabled)
                 if (detector_.jump_to_ballistic.enabled) {
                     const double r_xy = std::hypot(trk.pos.x, trk.pos.y);
                     const double clearance = std::min(detector_.solid.radius - r_xy,
@@ -534,8 +543,7 @@ public:
                 const auto split = surf.reflection_split(trk.energy);
                 const double u_refl = rng.uniform();
                 if (u_refl < split.p_anh) {
-                    // Surface-mediated anharmonic decay (G4CMPPhononBoundaryProcess:
-                    // G4CMPAnharmonicDecay::DoDecay, both daughters Lambertian)
+                    // Surface-mediated anharmonic decay (both daughters Lambertian)
                     stats.surface_downconversions++;
                     const bool tt = rng.uniform() < lattice_.config().fTT_frac;
                     const double x = tt ? lattice_.sample_tt_energy_fraction(rng)
@@ -571,8 +579,9 @@ public:
     }
 
     // ========================================================================
-    // 3. Extensible Custom Excitation Transport (BogoliubovQP, Exciton, Magnon)
-    //    Uses C++20 `ExcitationModel` for zero-overhead inlining!
+    // 3. User-defined excitation transport (see transport/excitation_model.hpp).
+    //    Free flight with the model's bulk rate, Lambertian boundary reflection,
+    //    absorption with probability SurfaceProperty::prob_abs.
     // ========================================================================
     template <ExcitationModel Model>
     void transport_custom_excitation(const Model& model,
@@ -635,10 +644,9 @@ public:
     }
 
     // ========================================================================
-    // 4. Full 3D Coupled Superconducting Bogoliubov Quasiparticle + Phonon
-    //    Transport (G4CMPBogoliubovQP, G4CMPSCPairBreakingProcess,
-    //    G4CMPQPRadiatesPhononProcess, G4CMPQPRecombinationProcess,
-    //    G4CMPQPLocalTrappingProcess, G4CMPQPDiffusion)
+    // 4. Coupled phonon + Bogoliubov quasiparticle transport in a bulk superconductor
+    //    (experimental): pair breaking, QP diffusion, phonon radiation, recombination
+    //    with thermal QPs, and local trapping.
     // ========================================================================
     void transport_superconductor_coupled(std::vector<PhononTrack>& phonon_stack,
                                           std::vector<GenericExcitationTrack>& qp_stack,
@@ -780,7 +788,7 @@ public:
                         : std::numeric_limits<double>::infinity();
                     const double dt = std::min(dt_phys, dt_max);
 
-                    // Sample diffusive displacement step (G4CMPQPDiffusion)
+                    // Sample diffusive displacement step
                     const Vec3 dr = sc.sample_diffusive_step(qp.energy, dt, rng, planar_2d_diffusion);
                     const double dr_mag = dr.norm();
 
@@ -822,7 +830,7 @@ public:
                     if (dt_phys <= dt_max) {
                         const double u_proc = rng.uniform() * r_tot;
                         if (r_trap > 0.0 && u_proc < r_trap) {
-                            // Local vortex/impurity trapping (G4CMPQPLocalTrappingProcess)
+                            // Local vortex/impurity trapping
                             stats.qp_local_traps++;
                             stats.escaped_or_killed_eV += qp.energy * qp.weight;
                             break;
@@ -874,7 +882,7 @@ private:
         return r;
     }
 
-    // ---- carrier collection release (WP7-E-v3 Sec. 1.3, "collection") ----
+    // ---- energy release at carrier collection (DetectorModel::charge_release) ----
     inline double collection_release_energy(const ChargeTrack& trk) const noexcept {
         const double eg = lattice_.config().bandgap;
         const double muF = (detector_.fermi_level_above_Ev_eV >= 0.0) ? detector_.fermi_level_above_Ev_eV : 0.5 * eg;

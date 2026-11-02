@@ -1,13 +1,13 @@
-// Audit test: Kaplan thin-film QP cascade (KaplanFilm), its surrogate table, and the
+// Kaplan thin-film QP cascade (KaplanFilm), its surrogate table, and the
 // 3D Bogoliubov-QP rates (BulkSuperconductor).
 //  (a) pair-breaking QP-energy sampler and QP phonon-emission sampler vs the Kaplan
 //      densities [E1 E2 + D^2]/sqrt((E1^2 - D^2)(E2^2 - D^2)) and
-//      (E - E')^2 (E' - D^2/E)/sqrt(E'^2 - D^2) (Kaplan PRB 14, 4854 (1976);
-//      campaign WP5-v4 Sec. 5 seed P(E1|omega)), by moments;
-//  (b) pair-breaking efficiency eta_pb = D <N_qp>/Omega (campaign WP5-v4 (W13)) vs
-//      Omega/D in the no-loss limit (thick film, no sub-gap absorption): exact value
-//      2D/Omega for Omega < 4D (WP5-v4 Sec. 5 limits); structure above 4D and the
-//      asymptote (0.57-0.6, 1401.1937 [FT]) are reported;
+//      (E - E')^2 (E' - D^2/E)/sqrt(E'^2 - D^2) (Kaplan et al.,
+//      Phys. Rev. B 14, 4854 (1976)), by moments;
+//  (b) pair-breaking efficiency eta_pb = D <N_qp>/Omega vs Omega/D in the no-loss
+//      limit (thick film, no sub-gap absorption): exact value 2D/Omega for Omega < 4D
+//      (only one pair can be broken); structure above 4D and the asymptote (0.57-0.6,
+//      arXiv:1401.1937) are reported;
 //  (c) the film escape model's linear lifetime law tau(Omega) = tau0/(1 + 0.29 (Omega/D - 2))
 //      vs the exact Kaplan pair-breaking rate (BulkSuperconductor LUT);
 //  (d) KaplanSurrogateLUT vs the full cascade in a re-entry cavity (reflected phonons

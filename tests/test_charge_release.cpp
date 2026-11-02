@@ -1,12 +1,12 @@
-// R16 test: energy released at carrier collection (DetectorModel::charge_release).
-//  Campaign WP7-E-v3 Sec. 1.3 ledger, row "collection": E_pairs -> H_ph at the contact,
+// Energy released at carrier collection (DetectorModel::charge_release).
+//  Energy bookkeeping at collection: the pair energy is converted to heat at the contact,
 //  E_rel = E_kin + (E_c - mu_F) for e-, E_kin + (mu_F - E_v) for h+.
 //  (a) closed form: e- + h+ at rest release E_g exactly, for any mu_F; mid-gap default;
 //  (b) per-mode energy closure in the engine: sum(hit edep) + sum(emitted phonons) + lost
 //      = sum(E_rel), to 1e-12 (RecordOnly, BulkDebye, ElectrodeFilm);
-//  (c) BulkDebye emits phonons of h nu_D (sourced preset, R15 P4);
-//  (d) ElectrodeFilm: the re-injected population is soft (born below a few Delta_Al; 1109.1193
-//      p.17 [FT] "low frequency, ballistic"): mean energy and the fraction below 2 Delta_Al and
+//  (c) BulkDebye emits phonons of h nu_D (Debye frequency from the material preset);
+//  (d) ElectrodeFilm: the re-injected population is soft (born below a few Delta_Al; Leman,
+//      arXiv:1109.1193, p. 17: "low frequency, ballistic"): mean energy and the fraction below 2 Delta_Al and
 //      4 Delta_Al are reported, the mean is checked to be < 4 Delta_Al, i.e. >= 100x softer than the
 //      bulk release (h nu_D(Ge) = 35.7 meV); the absorbed fraction is the film's eta_pb;
 //  (e) numerical seed-quantum size (80 vs 160 Delta; the hot-electron cascade feeds phonons up to
@@ -66,15 +66,15 @@ int main() {
                      (o.erel / N) / std::max(1.0, std::round((o.erel / N) / hnuD)), 1e-9);
         cmpmc_test::info("BulkDebye phonons per carrier", o.n_ph / N);
     }
-    // (b) + (d) + (e) ElectrodeFilm, legacy and rate-competition film loss
+    // (b) + (d) + (e) ElectrodeFilm, mean-free-path and rate-competition film loss
     for (int lm = 0; lm < 2; ++lm) {
         DetectorModel d = det; d.charge_release = DetectorModel::ChargeRelease::ElectrodeFilm;
         if (lm == 1) for (auto& sp : d.surfaces) if (sp.kaplan_sensor) {
             sp.kaplan_sensor->loss_model = FilmLossModel::KaplanRateCompetition;
             sp.kaplan_sensor->phonon_loss_time = KaplanFilm::loss_time_from_geometry(
-                sp.kaplan_sensor->film_thickness, sp.kaplan_sensor->v_sound, 0.94);   // Ge/Al AMM t_L normal (WP8-R 3.2)
+                sp.kaplan_sensor->film_thickness, sp.kaplan_sensor->v_sound, 0.94);   // Ge/Al AMM normal-incidence L transmission (test_interface_amm)
         }
-        const std::string tag = lm ? "ElectrodeFilm [Kaplan rate competition]" : "ElectrodeFilm [G4CMP loss law]";
+        const std::string tag = lm ? "ElectrodeFilm [Kaplan rate competition]" : "ElectrodeFilm [mean-free-path loss law]";
         Out o[2];
         for (int k = 0; k < 2; ++k) {
             DetectorModel dk = d; dk.electrode_seed_max_gap = k ? 160.0 : 80.0;

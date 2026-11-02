@@ -1,4 +1,4 @@
-// R16 test: runtime guards on modules without a validated reference path (core/validation.hpp).
+// Runtime guards on experimental modules without a validated reference path (core/validation.hpp).
 // Each guarded entry point must throw UnvalidatedModuleError by default and run when the caller
 // opts in (DetectorModel::allow_unvalidated / the NEE argument). Validated paths must not throw.
 #include "test_support.hpp"
@@ -28,7 +28,7 @@ int main() {
             DetectorModel d = det; d.jump_to_ballistic.enabled = true;
             SimulationEngine e(ge, d); std::vector<PhononTrack> st{e.make_track({0, 0, 0}, {0, 0, 1}, PhononMode::L, 1e-3)};
             std::vector<SensorHit> h; SimStats S; e.transport(st, h, S, rng); });
-        expect("transport_charges_fast_chord (now Leman, validated)" + sfx, false, [&] {
+        expect("transport_charges_fast_chord (Leman stepping, validated)" + sfx, false, [&] {
             SimulationEngine e(ge, det); std::vector<ChargeTrack> c; std::vector<PhononTrack> p;
             std::vector<SensorHit> h; SimStats S; e.transport_charges_fast_chord(c, p, h, S, rng); });
         expect("transport_superconductor_coupled" + sfx, !allow, [&] {

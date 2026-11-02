@@ -11,19 +11,15 @@
 
 namespace cmpmc::physics {
 
-// ============================================================================
-// Pure Charge Carrier Physics Equations
-//
-// Human-readable equations for:
-//   1. Neganov-Trofimov-Luke Cherenkov Acoustic Phonon Emission Rate (Cabrera 2010)
-//   2. Electron Intervalley Scattering Rate:
-//      - Quadratic field parameterization (arXiv:1807.07986 Eq. 1)
-//      - Linear field parameterization    (arXiv:1807.07986 Eq. 2)
-//      - First-principles Deformation-Potential Matrix Elements + Erginsoy
-//        neutral impurity scattering (Jacoboni 1983 / G4CMPInterValleyRate)
-//   3. Bulk Impurity Trapping & Trap Impact Ionization Rates
-//   4. 3D Initial Charge Cloud Spatial Distribution (G4CMPChargeCloud)
-// ============================================================================
+// Charge-carrier physics kernels: stateless functions for
+//   1. the non-parabolic band energy function,
+//   2. electron intervalley scattering rates:
+//      - quadratic field parameterisation (arXiv:1807.07986, Eq. 1),
+//      - linear field parameterisation    (arXiv:1807.07986, Eq. 2),
+//      - deformation-potential matrix elements plus Erginsoy neutral-impurity
+//        scattering (C. Jacoboni and L. Reggiani, Rev. Mod. Phys. 55, 645 (1983));
+//   3. bulk trapping and trap impact-ionisation rates;
+//   4. the spatial distribution of the initial charge cloud.
 
 // --- 1. Non-Parabolic Band Energy Function (Jacoboni 1983) ---
 //   gamma(E) = sqrt(E * (1 + alpha * E)) * (1 + 2 * alpha * E)
@@ -35,7 +31,7 @@ inline double nonparabolic_energy_func_SI(double e_eV, double alpha_inv_eV) noex
 }
 
 // --- 2. Matrix-Element Optical + Neutral Impurity Intervalley Rate ---
-// Matches G4CMPInterValleyRate::Rate() in exact SI units [1/s]
+// Rate in SI units [1/s].
 inline double intervalley_matrix_rate(double ekin_eV, const CrystalConfig& cfg) noexcept {
     const size_t n_valleys = cfg.valley_dirs.size();
     if (n_valleys < 2 || ekin_eV <= 0.0) return 0.0;
@@ -100,7 +96,7 @@ inline double intervalley_scattering_rate(double ekin_eV,
 }
 
 // --- 4. Bulk Charge Trapping & Trap Impact Ionization Rates [1/s] ---
-// Matches G4CMPDriftTrappingProcess & G4CMPDriftTrapIonization
+// Constant mean-free-path model: rate = v / lambda for each enabled channel.
 inline constexpr double charge_trapping_rate(ExcitationType type,
                                              double v_mag,
                                              const CrystalConfig& cfg) noexcept {
@@ -126,7 +122,7 @@ inline constexpr double trap_ionization_h_rate(ExcitationType projectile_type,
     return (mfp > 0.0 && mfp < 1e20) ? (v_mag / mfp) : 0.0;
 }
 
-// --- 5. 3D Initial Charge Cloud Spatial Generator (G4CMPChargeCloud) ---
+// --- 5. 3D Initial Charge Cloud Spatial Generator ---
 // Distributes `n_pairs` e-/h+ pairs in a sphere around `center` with linear
 // radial falloff and radius scaled to match the crystal unit-cell density.
 struct ChargeCloudGenerator {

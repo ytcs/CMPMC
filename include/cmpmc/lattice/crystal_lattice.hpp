@@ -1,7 +1,6 @@
 #pragma once
 
 #include "cmpmc/core/core.hpp"
-#include "cmpmc/io/g4cmp_config_import.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
 #include "cmpmc/charge/charge_kernels.hpp"
@@ -14,18 +13,18 @@
 
 namespace cmpmc {
 
-// ============================================================================
-// CrystalLattice: Precomputes 2D Group-Velocity LUT, 1D Inverse-CDF Decay
-// Tables, and Herring-Vogt Valley Tensors from pure physics equations in
-// `include/cmpmc/physics/phonon_physics.hpp` and `materials/crystal_config.hpp`.
-// ============================================================================
+// CrystalLattice: the runtime representation of a crystal. Built once from a
+// CrystalConfig, it precomputes the phonon group-velocity lookup tables, the
+// inverse-CDF tables for anharmonic decay, and the Herring-Vogt valley tensors
+// used by charge transport. The underlying equations live in
+// cmpmc/phonon/phonon_kernels.hpp and cmpmc/charge/charge_kernels.hpp.
 class CrystalLattice {
 public:
     using Config = CrystalConfig;
 
     static constexpr int N_CTHETA = 181; // cos(theta) in [-1, 1]
     static constexpr int N_PHI    = 361; // phi in [0, 2*pi]
-    static constexpr int N_OCT    = 256; // 256x256 zero-trig Octahedral FP32 LUT
+    static constexpr int N_OCT    = 256; // 256 x 256 octahedral FP32 table
     static constexpr int N_CDF    = 1024; // Inverse-CDF bins for anharmonic decay
 
     struct alignas(16) OctLutEntry {
@@ -60,14 +59,14 @@ public:
     double debye_energy() const noexcept { return cfg_.debye_freq * units::h_Planck; }
 
     // Kinematics query: wavevector k_dir -> (vg_dir, vg_mag).
-    // The legacy 181 x 361 bilinear (cos theta, phi) table is uniform in cos theta, so
+    // The 181 x 361 bilinear (cos theta, phi) table is uniform in cos theta, so
     // near the poles (the crystal z axis, e.g. [001] towards the sensor faces) its polar
     // step is ~8 degrees: tests/test_christoffel measured a 99th-percentile direction
     // error of 14-16 mrad for L phonons in Si/Ge (max 84 mrad; 0.3-0.4 rad for FT/ST).
-    // Default is now the 256 x 256 octahedral table (q99 0.2 mrad for L, 2.5 mrad for
+    // The default is the 256 x 256 octahedral table (q99 0.2 mrad for L, 2.5 mrad for
     // FT/ST; errors > 1 degree only on FT/ST degeneracy lines, 0.1% of directions; and
-    // faster). Exact per-call Christoffel solve (~1.7 us) and the legacy table remain
-    // selectable.
+    // faster). The exact per-call Christoffel solve (~1.7 us) and the bilinear table
+    // remain selectable.
     enum class KinematicsMode : uint8_t { Octahedral = 0, Exact = 1, Bilinear = 2 };
     void set_kinematics_mode(KinematicsMode m) noexcept { kin_mode_ = m; }
     KinematicsMode kinematics_mode() const noexcept { return kin_mode_; }
@@ -111,7 +110,7 @@ public:
         return {vg_det.unit(), mag};
     }
 
-    // Zero-Trigonometry Octahedral Equal-Area Mapping: unit 3D vector -> (u, v) in [-1, 1]^2
+    // Octahedral mapping (no trigonometric functions): unit 3D vector -> (u, v) in [-1, 1]^2
     static inline void oct_encode(const Vec3& k, double& u_out, double& v_out) noexcept {
         const double l1 = std::abs(k.x) + std::abs(k.y) + std::abs(k.z);
         const double inv_l1 = (l1 > 1e-18) ? (1.0 / l1) : 1.0;
@@ -138,7 +137,7 @@ public:
         return Vec3{kx, ky, kz}.unit();
     }
 
-    // Tier-2 Zero-Trig FP32 Octahedral LUT Query (eliminates std::atan2 from inner loop)
+    // Octahedral FP32 table query (no std::atan2 in the inner loop)
     inline Kinematics map_k_to_vg_oct(PhononMode mode, const Vec3& k_det) const noexcept {
         const Vec3 k = cfg_.orient.mul_transpose(k_det);
         double u_oct = 0.0, v_oct = 0.0;
@@ -173,7 +172,7 @@ public:
         return {vg_det.unit(), mag};
     }
 
-    // Forward to readable equations in `include/cmpmc/physics/phonon_physics.hpp`
+    // Rate equations: see cmpmc/phonon/phonon_kernels.hpp
     inline double isotope_rate(double energy_eV) const noexcept {
         return physics::isotope_scattering_rate(energy_eV, cfg_.B_iso);
     }
@@ -194,7 +193,7 @@ public:
         return physics::sample_transverse_mode(cfg_, rng);
     }
 
-    // O(1) Inverse-CDF Sampling for Anharmonic Downconversion
+    // O(1) inverse-CDF sampling of the anharmonic down-conversion energy split
     inline double sample_lt_energy_fraction(Rng& rng) const noexcept {
         const double u = rng.uniform() * (N_CDF - 1);
         const int i = std::min(static_cast<int>(u), N_CDF - 2);

@@ -8,20 +8,14 @@
 
 namespace cmpmc::geometry {
 
-// ============================================================================
-// ElectrodePatternMask: Fast 2D Surface Sensor Masking
-// Replaces: G4CMPVElectrodePattern & complex Geant4 daughter volume arrays
+// Patterned sensor / electrode layouts on a crystal face.
 //
-// Physics & Detector Design Rationale:
-//   Instead of placing thousands of tiny Geant4 daughter volumes (G4Box/G4Tubs)
-//   for QET fins, KID resonators, or qubit pads on a crystal surface (which
-//   causes O(N) G4Navigator voxel slowdown), CMPMC evaluates an analytic 2D
-//   surface mask at the moment a phonon, charge, or quasiparticle hits a face.
-//
-//   If `find_channel(pos, rng)` returns `channel_id >= 0`, the track hits active
-//   sensor metal for that readout channel; if it returns `-1`, the track hits
-//   bare crystal between pads and undergoes bare-surface reflection.
-// ============================================================================
+// Sensor metallisation (QET fins, KID resonators, qubit pads) is described as an
+// analytic 2D mask in the face plane rather than as separate geometry volumes.
+// The mask is evaluated only when a track reaches the face:
+// `find_channel(pos, rng)` returns the readout channel (>= 0) if the hit lands on
+// active metal, or -1 for bare crystal between pads (bare-surface reflection).
+// Coordinates are in metres in the detector frame (x, y of the face).
 struct ElectrodePad {
     enum class Shape : uint8_t {
         Disk          = 0, // Centered at (cx, cy) with radius r_max
@@ -102,11 +96,11 @@ public:
         return -1;
     }
 
-    // Preset 1: SuperCDMS-style 4-channel Phonon QET layout:
+    // Preset: five-channel phonon-sensor layout on a circular face (radius R):
     //   Channel 0: Inner core disk (r <= 0.55 * R)
     //   Channels 1, 2, 3: Three 120-degree outer annular sectors (0.57 * R <= r <= 0.90 * R)
     //   Channel 4: Outer guard ring (0.92 * R <= r <= 0.98 * R)
-    static ElectrodePatternMask supercdms_qet_mask(double crystal_radius_m,
+    static ElectrodePatternMask five_channel_qet_mask(double crystal_radius_m,
                                                    double fill_fraction = 1.0) {
         std::vector<ElectrodePad> pads;
         // Inner core disk (Channel 0)
@@ -155,7 +149,7 @@ public:
         return ElectrodePatternMask(std::move(pads));
     }
 
-    // Preset 2: Rectangular NX x NY grid array of KID / Qubit / pixel pads
+    // Preset: rectangular NX x NY grid array of KID / Qubit / pixel pads
     static ElectrodePatternMask rectangular_grid_mask(int nx, int ny,
                                                       double pitch_x, double pitch_y,
                                                       double pad_half_w, double pad_half_h,

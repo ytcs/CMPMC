@@ -11,13 +11,14 @@
 
 namespace cmpmc::experimental {
 
-// ============================================================================
-// Tier-2 SIMD Structure-of-Arrays (SoA) Wavefront Transport Kernel
-//   Transposes AoS `PhononTrack` into 16-wide cache-line-aligned SoA batches
-//   (`PhononBatchSoA16`) so the compiler's AVX2 / AVX-512 / NEON auto-vectorizer
-//   executes ray-cylinder intersection and free-flight MFP kinematics across
-//   16 tracks in lockstep without AoS gather/scatter stalls.
-// ============================================================================
+// Experimental: structure-of-arrays (SoA) phonon transport.
+// Guarded by require_validated(); see docs/experimental.md.
+//
+// Phonon tracks are transposed into 16-wide, cache-line-aligned batches
+// (PhononBatchSoA16) so that the cylinder intersection and free-flight sampling
+// can be auto-vectorised across 16 tracks. Known simplifications relative to
+// SimulationEngine::transport: only the L -> TT decay channel, isotropic decay
+// daughters, diffuse walls only, and only the first re-emitted film phonon.
 struct alignas(64) PhononBatchSoA16 {
     static constexpr size_t W = 16;
 
@@ -47,7 +48,7 @@ struct alignas(64) PhononBatchSoA16 {
     alignas(64) double rate_down[W]{};
     alignas(64) uint8_t hit_surf[W]{};
 
-    // Vectorized 16-wide Ray-Cylinder exit intersection (zero branches in math core)
+    // Vectorized 16-wide ray-cylinder exit intersection (branch-free arithmetic)
     inline void intersect_cylinder_16(double radius, double half_z) noexcept {
         const double r2 = radius * radius;
         for (size_t i = 0; i < W; ++i) {
@@ -72,7 +73,7 @@ struct alignas(64) PhononBatchSoA16 {
         }
     }
 
-    // Vectorized 16-wide Free-Flight MFP & Rate Evaluation
+    // Vectorized 16-wide free-flight sampling and rate evaluation
     inline void compute_free_flight_16(double B_iso, double A_anh, const double u_rand[W]) noexcept {
         constexpr double inv_h = 1.0 / units::h_Planck;
         for (size_t i = 0; i < W; ++i) {
@@ -176,7 +177,7 @@ public:
                     const double r_down = batch.rate_down[i];
                     const double r_tot  = batch.rate_iso[i] + r_down;
                     if (r_down > 0.0 && rng.uniform() * r_tot < r_down) {
-                        // Anharmonic decay using O(1) Inverse-CDF + Zero-Trig Octahedral LUT
+                        // Anharmonic decay via the inverse-CDF tables and the octahedral v_g table
                         stats.decays_L_to_TT++;
                         const double x = lattice_.sample_tt_energy_fraction(rng);
                         const PhononMode m1 = lattice_.sample_transverse_mode(rng);

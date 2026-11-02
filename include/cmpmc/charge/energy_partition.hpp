@@ -1,5 +1,8 @@
 #pragma once
 
+// Energy partition of a deposit into charge carriers and prompt phonons, and the
+// step accumulator / hit merger for primary-particle input.
+
 #include "cmpmc/charge/charge_transport.hpp"
 #include "cmpmc/core/core.hpp"
 #include "cmpmc/lattice/crystal_lattice.hpp"
@@ -10,17 +13,14 @@
 
 namespace cmpmc {
 
-// ============================================================================
-// EnergyPartition (All 5 NIEL Models + Exact Fano Interpolated Binomial)
-// Replaces: G4CMPEnergyPartition, G4CMPLindhardNIEL, G4CMPLewinSmithNIEL,
-//           G4CMPSarkisNIEL, G4CMPImpactTunlNIEL, G4CMPEmpiricalNIEL,
-//           and G4CMPFanoBinomial
-// ============================================================================
+// EnergyPartition: splits an energy deposit into electron-hole pairs and prompt
+// phonons, using one of the nuclear-recoil ionisation-yield models of
+// cmpmc/charge/niel_models.hpp and the Fano-binomial pair-number sampler.
 struct PartitionOptions {
     physics::NIELModel niel_model = physics::NIELModel::Lindhard;
     physics::EmpiricalNIELParams empirical_niel{};
     bool use_fano_fluctuations   = true;
-    bool use_charge_cloud        = true;  // Distribute e-/h+ pairs in 3D sphere (G4CMPChargeCloud)
+    bool use_charge_cloud        = true;  // Distribute e-/h+ pairs in a 3D cloud
     uint32_t max_sampled_pairs   = 1000;  // Downsample e-/h+ pairs above this count (with weight)
     uint32_t max_sampled_phonons = 5000;  // Downsample prompt phonons above this count (with weight)
 };
@@ -46,8 +46,8 @@ public:
     explicit constexpr EnergyPartition(const CrystalLattice& lattice) noexcept
         : lattice_(lattice), charge_phys_(lattice) {}
 
-    // Lewin & Smith (1996) / Lindhard & Robinson Ionization Yield Y(E)
-    // Matches G4CMPLindhardNIEL::PartitionNIEL
+    // Lindhard ionisation yield Y(E) (Lindhard 1963, in the Lewin & Smith 1996 form;
+    // see cmpmc/charge/niel_models.hpp)
     double lindhard_ionization_yield(double energy_eV, double z1 = 0.0, double a1 = 0.0) const noexcept {
         if (energy_eV <= 0.0) return 0.0;
         const double z2 = lattice_.config().atomic_Z;
@@ -92,7 +92,7 @@ public:
         const double e_pair = lattice_.config().pair_energy;
         const double fano   = lattice_.config().fano_factor;
 
-        // 1. Sample number of e-/h+ pairs with exact Fano interpolated binomial (G4CMPFanoBinomial)
+        // 1. Sample number of e-/h+ pairs with the interpolated Fano binomial sampler
         if (res.ionizing_eV >= e_gap && e_pair > 0.0) {
             const double mean_pairs = res.ionizing_eV / e_pair;
             if (!opts.use_fano_fluctuations || mean_pairs < 1.0) {
@@ -109,7 +109,7 @@ public:
         const double total_pair_energy = static_cast<double>(res.n_pairs_true) * (e_gap + 2.0 * init_carrier_ekin);
         res.prompt_phonon_eV = std::max(0.0, total_edep_eV - total_pair_energy);
 
-        // 2. Spawn sampled e-/h+ pairs (with optional 3D G4CMPChargeCloud spatial distribution)
+        // 2. Spawn sampled e-/h+ pairs (with optional 3D charge-cloud spatial distribution)
         if (res.n_pairs_true > 0) {
             res.n_pairs_sampled = std::min<uint64_t>(res.n_pairs_true, opts.max_sampled_pairs);
             res.charge_weight   = static_cast<double>(res.n_pairs_true) / res.n_pairs_sampled;
@@ -168,17 +168,14 @@ private:
     ChargePhysics charge_phys_;
 };
 
-// ============================================================================
-// PrimaryStepInput, StepAccumulator & HitMerger
-// Replaces: G4CMPStepInfo, G4CMPStepAccumulator, G4CMPHitMerging &
-//           G4CMPSecondaryProduction
+// PrimaryStepInput, StepAccumulator and HitMerger: interface for feeding primary-
+// particle steps (e.g. from an external particle-transport code) into CMPMC.
 //
 // Consolidates adjacent continuous dE/dx or nuclear recoil steps along a
 // primary particle track within `combining_step_length` (default 1 mm),
 // partitions the merged deposit into e-/h+ pairs and prompt phonons, and
 // distributes secondaries along the trajectory chord with Gaussian jitter
 // (dl +- dl/6) for charged tracks or at the endpoint for neutral tracks.
-// ============================================================================
 struct PrimaryStepInput {
     int32_t track_id       = 1;
     Vec3 start_pos         = {0.0, 0.0, 0.0};
@@ -291,7 +288,6 @@ public:
 
         // For charged tracks with non-zero chord length, spread generated secondaries
         // along [start_pos, end_pos] with Gaussian step jitter dl +- dl/6
-        // matching G4CMPHitMerging::GeneratePositions
         const Vec3 traj   = accum_.end_pos - accum_.start_pos;
         const double len  = traj.norm();
         const size_t nsec = (out_charges.size() - c_start) + (out_phonons.size() - p_start);

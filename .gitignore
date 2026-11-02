@@ -1,5 +1,11 @@
+# Build trees
 build/
-*.o
-*.out
-phonon_benchmark
+build-*/
+out/
+cmake-build-*/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
 .DS_Store

@@ -1,11 +1,11 @@
-// R16 test: closed-form (trigonometric Cardano + cross-product) Christoffel solve against the
-// Jacobi solve (R15 T1-validated) and the [100]/[110]/[111] closed forms, for cubic (Si, Ge, GaAs),
+// Closed-form (trigonometric Cardano + cross-product) Christoffel solve against the
+// Jacobi solve (validated in test_christoffel) and the [100]/[110]/[111] closed forms, for cubic (Si, Ge, GaAs),
 // trigonal (sapphire, alpha-quartz) and tetragonal (CaWO4) stiffness tensors.
 //  (a) phase speeds of all modes, 2e5 random directions: max rel. diff <= 1e-10;
 //  (b) group velocities: max |dv_g|/|v_g| over directions whose eigenvalue gap is > 1e-3
 //      (well separated): <= 1e-8; near-degenerate directions fall back to Jacobi (identical);
-//  (c) Si [100]: v_L = sqrt(C11/rho), v_T = sqrt(C44/rho) (closed form, Leman 1109.1193 Table I
-//      inputs via the preset), [111] v_L = sqrt((C11 + 2C12 + 4C44)/(3 rho));
+//  (c) Si [100]: v_L = sqrt(C11/rho), v_T = sqrt(C44/rho) (closed form; Leman, arXiv:1109.1193,
+//      Table I inputs via the preset), [111] v_L = sqrt((C11 + 2C12 + 4C44)/(3 rho));
 //  (d) cost per call (reported) and that CrystalLattice::map_k_to_vg_exact uses it.
 #include "test_support.hpp"
 #include "cmpmc/lattice/crystal_lattice.hpp"
@@ -15,8 +15,12 @@
 using namespace cmpmc;
 
 static void build_C(const CrystalConfig& cfg, double C[3][3][3][3]) {
-    auto vi = [](int i, int j) { if (i == j) return i; if ((i == 1 && j == 2) || (i == 2 && j == 1)) return 3;
-                                 if ((i == 0 && j == 2) || (i == 2 && j == 0)) return 4; return 5; };
+    auto vi = [](int i, int j) {
+        if (i == j) return i;
+        if ((i == 1 && j == 2) || (i == 2 && j == 1)) return 3;
+        if ((i == 0 && j == 2) || (i == 2 && j == 0)) return 4;
+        return 5;
+    };
     const auto V = cfg.build_voigt_matrix();
     for (int i = 0; i < 3; ++i) for (int j = 0; j < 3; ++j) for (int l = 0; l < 3; ++l) for (int m = 0; m < 3; ++m)
         C[i][j][l][m] = V[vi(i, j)][vi(l, m)];

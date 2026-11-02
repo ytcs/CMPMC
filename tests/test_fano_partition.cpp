@@ -1,7 +1,7 @@
-// Audit test: Fano binomial sampler and the energy partition.
+// Fano binomial sampler and the energy partition.
 //  (a) sample_fano_binomial: <N> = n_bar and Var N / n_bar = F for n_bar in [2, 1e4],
-//      F in {0.119, 0.15, 0.30} (Fano's definition, 2004.10709 Eq. (3) [FT]);
-//  (b) partition_deposit energy bookkeeping (campaign WP5-v4 (W4) at zero field:
+//      F in {0.119, 0.15, 0.30} (Fano's definition, arXiv:2004.10709, Eq. (3));
+//  (b) partition_deposit energy bookkeeping at zero field:
 //      omega = N_eh E_g + heat, heat = prompt phonons + carrier kinetic energy).
 #include "test_support.hpp"
 #include "cmpmc/charge/energy_partition.hpp"
@@ -29,7 +29,7 @@ int main() {
         std::vector<ChargeTrack> q; std::vector<PhononTrack> ph;
         const auto r = part.partition_deposit(Vec3{0, 0, 0}, 0.0, E, false, q, ph, rng, opt);
         double eq = 0, ep = 0; for (auto& c : q) eq += c.ekin * c.weight; for (auto& p : ph) ep += p.energy * p.weight;
-        cmpmc_test::check("Si ER " + std::to_string(int(E)) + " eV: N E_g + E_kin + E_ph = omega (W4)",
+        cmpmc_test::check("Si ER " + std::to_string(int(E)) + " eV: N E_g + E_kin + E_ph = omega",
                      r.n_pairs_true * lat.config().bandgap + eq + ep, E, 1e-9);
     }
     return cmpmc_test::result();

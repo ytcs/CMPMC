@@ -16,27 +16,21 @@
 
 namespace cmpmc::experimental {
 
-// ============================================================================
-// Tier-3 GPU-Ready Wavefront Path-Tracing Pipeline (Zero Warp Divergence)
+// Experimental: queue-based ("wavefront") phonon transport pipeline, structured
+// for a later GPU port. Guarded by require_validated(); see docs/experimental.md.
 //
-// Architecture (matches Section 3 / Tier 3 of PLAN.md):
-//   Instead of a monolithic "megakernel" where 31 of 32 GPU threads in a warp
-//   stall whenever 1 thread enters an anharmonic decay or Kaplan QP cascade,
-//   all active tracks are processed through 4 non-divergent wavefront stages
-//   connected by flat contiguous work queues:
-//     - Stage 1 (`step_free_flight_and_raytrace_stage`):
-//         Advances every active ray by min(d_phys, d_geom) and partitions
-//         survivors into 3 compact queues: `q_isotope`, `q_decay`, `q_boundary`.
-//     - Stage 2 (`isotope_scatter_stage`):
-//         100% uniform workload: samples new DOS mode + isotropic k_dir +
-//         zero-trig Octahedral LUT lookup (`map_k_to_vg_oct`).
-//     - Stage 3 (`anharmonic_decay_stage`):
-//         100% uniform workload: O(1) Inverse-CDF energy split + 2 daughter
-//         tracks pushed back to the active ray queue.
-//     - Stage 4 (`boundary_kaplan_stage`):
-//         100% branchless sensor evaluation using `KaplanSurrogateLUT` +
-//         Lambertian / specular surface reflection.
-// ============================================================================
+// Rather than one loop that handles every interaction type per track, all active
+// tracks pass through four stages connected by flat work queues, so each stage
+// runs a uniform workload:
+//   1. stage1_free_flight_and_raytrace: advance each track by
+//      min(d_phys, d_geom) and sort it into q_isotope, q_decay or q_boundary;
+//   2. stage2_isotope_scatter: new DOS-weighted mode, isotropic k, v_g lookup;
+//   3. stage3_anharmonic_decay: inverse-CDF energy split, two daughters pushed
+//      back to the active queue;
+//   4. stage4_boundary_and_kaplan: sensor absorption via KaplanSurrogateLUT, or
+//      surface reflection.
+// Known simplification relative to SimulationEngine::transport: decay daughters
+// are emitted isotropically.
 struct WavefrontQueues {
     std::vector<PhononTrack> q_active;
     std::vector<PhononTrack> q_next_active;
@@ -91,16 +85,16 @@ public:
             queues.q_decay.clear();
             queues.q_boundary.clear();
 
-            // Stage 1: Free-Flight & Ray-Trace Stage ( classifies into 3 queues )
+            // Stage 1: free flight and boundary intersection (sorts into 3 queues)
             stage1_free_flight_and_raytrace(queues, stats, rng);
 
-            // Stage 2: Isotope & Polycrystal Elastic Scatter Stage
+            // Stage 2: isotope and polycrystal elastic scattering
             stage2_isotope_scatter(queues, stats, rng);
 
-            // Stage 3: Anharmonic Downconversion Stage (L -> TT / LT)
+            // Stage 3: anharmonic down-conversion (L -> TT / LT)
             stage3_anharmonic_decay(queues, stats, rng);
 
-            // Stage 4: Boundary Reflection & Branchless Kaplan Surrogate Sensor Stage
+            // Stage 4: boundary reflection and sensor absorption (Kaplan surrogate table)
             stage4_boundary_and_kaplan(queues, hits, stats, rng);
 
             std::swap(queues.q_active, queues.q_next_active);

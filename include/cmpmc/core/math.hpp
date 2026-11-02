@@ -121,9 +121,10 @@ struct SmallVec {
 };
 
 // Buffer of the Kaplan film cascade (QP / phonon generations and re-emitted phonons).
-// Capacity 256: the cascade of one phonon of energy Omega re-emits ~Omega/(2 Delta) phonons at
-// most; with the former capacity 64, energies above ~130 Delta (22 meV in Al, i.e. Debye-scale
-// prompt phonons) silently lost energy at push_back (R16 test_pair_breaking (f)).
+// Capacity 256: the cascade of one phonon of energy Omega re-emits at most ~Omega/(2 Delta)
+// phonons, so the buffer holds the full cascade of Debye-scale phonons (several hundred Delta).
+// A smaller buffer would drop entries at push_back and lose energy; test_pair_breaking checks
+// energy closure up to 350 Delta.
 using KaplanBuffer = SmallVec<double, 256>;
 
 } // namespace cmpmc

@@ -1,10 +1,10 @@
 // Material presets against independent references.
 //  (a) isotope constant B rebuilt independently, B = 4 pi^3 Gamma_md Omega <v^-3>,
 //      <v^-3> = (1/3) sum_modes <v_p^-3>_{4pi} from CMPMC's own Christoffel solver and
-//      Gamma_md from IUPAC isotope abundances (2408.04732 Eqs. (4)-(9) [FT]);
-//  (b) published values: Si eps_eh, F_eh (WP5-v4 Sec. 6.4: 3.749 eV, 0.119 at 5.9 keV),
-//      Debye (max optical) frequencies (2408.04732 Table 5 [FT]: Si 15.28, Ge 9.02,
-//      GaAs 8.58 THz), GaAs A, F_TT (2408.04732 Table 3).
+//      Gamma_md from IUPAC isotope abundances (arXiv:2408.04732, Eqs. (4)-(9));
+//  (b) published values: Si eps_eh, F_eh (arXiv:2004.11499: 3.749 eV, 0.119 at 5.9 keV),
+//      Debye (max optical) frequencies (arXiv:2408.04732, Table 5: Si 15.28, Ge 9.02,
+//      GaAs 8.58 THz), GaAs A, F_TT (arXiv:2408.04732, Table 3).
 #include "test_support.hpp"
 #include "cmpmc/lattice/crystal_lattice.hpp"
 #include <vector>
@@ -13,7 +13,7 @@ using namespace cmpmc;
 
 struct Iso { double m, f; };
 static double gamma_md(const std::vector<std::vector<Iso>>& sites) {
-    // 2408.04732 Eqs. (5)-(9) with equal stoichiometry per listed site
+    // arXiv:2408.04732, Eqs. (5)-(9), with equal stoichiometry per listed site
     double Mbar = 0, dM2 = 0;
     for (const auto& s : sites) { double Mn = 0; for (auto i : s) Mn += i.f * i.m;
         double d = 0; for (auto i : s) d += i.f * (i.m - Mn) * (i.m - Mn); Mbar += Mn; dM2 += d; }
@@ -51,12 +51,12 @@ int main() {
     }
 
     const auto si = materials::Silicon(), ge = materials::Germanium(), ga = materials::GalliumArsenide();
-    cmpmc_test::check("Si pair energy vs campaign 3.749 eV (WP5-v4 6.4)", si.pair_energy, 3.749, 0.005);
-    cmpmc_test::check("Si Fano vs campaign 0.119 (WP5-v4 6.4)", si.fano_factor, 0.119, 0.05);
-    cmpmc_test::check("Si Debye (THz) vs 2408.04732 T5 15.28", si.debye_freq / units::THz, 15.28, 0.03);
-    cmpmc_test::check("Ge Debye (THz) vs campaign 8.64 (WP8-R T1.1)", ge.debye_freq / units::THz, 8.64, 0.01);
-    cmpmc_test::check("GaAs Debye (THz) vs 2408.04732 T5 8.58", ga.debye_freq / units::THz, 8.58, 0.05);
-    cmpmc_test::check("GaAs A_anh vs 2408.04732 T3 7.77e-55", ga.A_anh, 7.77e-55, 0.02);
-    cmpmc_test::check("GaAs F_TT vs 2408.04732 T3 0.77", ga.fTT_frac, 0.77, 0.02);
+    cmpmc_test::check("Si pair energy vs 3.749 eV (arXiv:2004.11499)", si.pair_energy, 3.749, 0.005);
+    cmpmc_test::check("Si Fano vs 0.119 (arXiv:2004.11499)", si.fano_factor, 0.119, 0.05);
+    cmpmc_test::check("Si Debye (THz) vs 15.28 (arXiv:2408.04732 Tab. 5)", si.debye_freq / units::THz, 15.28, 0.03);
+    cmpmc_test::check("Ge Debye (THz) vs 8.64 (max optical-phonon freq.)", ge.debye_freq / units::THz, 8.64, 0.01);
+    cmpmc_test::check("GaAs Debye (THz) vs 8.58 (arXiv:2408.04732 Tab. 5)", ga.debye_freq / units::THz, 8.58, 0.05);
+    cmpmc_test::check("GaAs A_anh vs 7.77e-55 (arXiv:2408.04732 Tab. 3)", ga.A_anh, 7.77e-55, 0.02);
+    cmpmc_test::check("GaAs F_TT vs 0.77 (arXiv:2408.04732 Tab. 3)", ga.fTT_frac, 0.77, 0.02);
     return cmpmc_test::result();
 }

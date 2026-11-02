@@ -94,7 +94,7 @@ template <ExcitationModel Model>
 void run(const char* label, const Model& model, const SimulationEngine& engine, double energy_eV) {
     Rng rng(42);
     std::vector<GenericExcitationTrack> stack;
-    for (int i = 0; i < 1000; ++i) {
+    for (int i = 0; i < 200; ++i) {
         GenericExcitationTrack trk{};
         trk.pos      = {0.0, 0.0, 0.0};
         trk.mom_dir  = rng.isotropic_dir();
@@ -116,7 +116,12 @@ int main() {
     DetectorModel detector;
     const SimulationEngine engine(lattice, detector);
 
-    run("Bogoliubov QP", BogoliubovQPModel{}, engine, 300.0 * units::ueV);
+    // Mean free paths are chosen so that a track crosses the 2.54 cm crystal in a
+    // modest number of steps; a realistic 60 nm QP mean free path would need ~1e12.
+    BogoliubovQPModel qp;
+    qp.elastic_mfp_m = 2.0 * units::mm;
+    qp.trap_rate_Hz  = 2.0e4;
+    run("Bogoliubov QP", qp, engine, 300.0 * units::ueV);
     run("Magnon", MagnonModel{}, engine, 120.0 * units::ueV);
     return 0;
 }

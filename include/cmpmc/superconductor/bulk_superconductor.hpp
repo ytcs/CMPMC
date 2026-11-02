@@ -12,25 +12,21 @@
 
 namespace cmpmc::physics {
 
-// ============================================================================
-// 3D Superconducting Bogoliubov Quasiparticle & Pair-Breaking Physics
+// Bulk superconductor: Bogoliubov quasiparticle and pair-breaking physics.
+//   - BCS temperature-dependent gap Delta(T) and Fermi/Bose factors
+//   - phonon -> 2 QP pair breaking: rate and energy sampling
+//   - QP -> QP' + phonon radiation: rate and energy sampling
+//   - QP + thermal QP -> phonon recombination
+//   - local impurity / vortex trapping, rate 1 / tau_trap
+//   - energy-dependent diffusivity D(E) = D_n sqrt(1 - (Delta/E)^2) and Gaussian
+//     diffusive stepping
 //
-// Ports and optimizes:
-//   - G4CMPSCUtils.cc                (BCS temperature-dependent gap Delta(T), Fermi/Bose factors)
-//   - G4CMPSCPairBreakingRate.cc     (Phonon -> 2 Bogoliubov QPs rate & energy sampling)
-//   - G4CMPQPRadiatesPhononRate.cc   (QP -> QP' + Phonon radiation rate & energy sampling)
-//   - G4CMPQPRecombinationRate.cc    (QP + Thermal Bath QP -> 2*Delta Phonon recombination)
-//   - G4CMPQPLocalTrappingRate.cc    (Local impurity/vortex trapping rate 1 / tau_trap)
-//   - G4CMPQPDiffusion.cc            (Energy-dependent BCS diffusivity D(E) = D_n * sqrt(1 - (Delta/E)^2)
-//                                     and Brownian / Walk-on-Spheres diffusive stepping)
+// The rate tables are integrals over the BCS density of states, which has
+// 1/sqrt(E^2 - Delta^2) singularities. Trigonometric and quadratic substitutions
+// cancel these singularities exactly, so 64 quadrature nodes per table suffice.
 //
-// Algorithmic Speedup over G4CMP:
-//   G4CMP's rate table builders use 10,000-20,000 bin Riemann sums over integrands
-//   with 1/sqrt(E^2 - Delta^2) BCS density-of-states singularities.
-//   Here we apply analytic trigonometric/quadratic variable substitutions that
-//   cancel the inverse-square-root singularities identically, achieving higher
-//   accuracy in 64 quadrature nodes (~250x faster initialization).
-// ============================================================================
+// This module feeds SimulationEngine::transport_superconductor_coupled, which is
+// guarded as experimental (see docs/experimental.md).
 
 struct BulkSuperconductor {
     static constexpr int N_LUT_BINS = 256;
@@ -60,7 +56,7 @@ struct BulkSuperconductor {
 
     bool is_enabled() const noexcept { return delta_T_eV > 0.0; }
 
-    // --- 1. BCS Temperature-Dependent Gap & Thermal Factors (G4CMPSCUtils) ---
+    // --- 1. BCS Temperature-Dependent Gap & Thermal Factors ---
     static inline double bcs_gap_at_temp(double delta0_eV, double t_eff_K, double t_crit_K) noexcept {
         if (delta0_eV <= 0.0) return 0.0;
         if (t_crit_K <= 0.0) {
@@ -70,7 +66,7 @@ struct BulkSuperconductor {
         if (t_eff_K <= 0.0) return delta0_eV;
         if (t_eff_K >= t_crit_K) return 0.0;
 
-        // Exact Mühlschlegel / Tinkham BCS gap interpolation (matches G4CMPSCUtils table to <0.1%)
+        // Exact Mühlschlegel / Tinkham BCS gap interpolation (agrees with the tabulated BCS gap to <0.1%)
         const double u = t_eff_K / t_crit_K;
         const double factor = std::tanh(1.74 * std::sqrt(std::max(0.0, (1.0 / u) - 1.0)));
         return delta0_eV * factor;
@@ -91,7 +87,7 @@ struct BulkSuperconductor {
     }
 
     // --- 2. Energy-Dependent Quasiparticle Diffusivity & Group Velocity ---
-    //   D(E) = D_n * sqrt(1 - (Delta / E)^2)   (G4CMPQPDiffusion)
+    //   D(E) = D_n * sqrt(1 - (Delta / E)^2)
     inline double qp_diffusivity(double qp_energy_eV) const noexcept {
         if (qp_energy_eV <= delta_T_eV || dn_m2_s <= 0.0) return 0.0;
         const double r = delta_T_eV / qp_energy_eV;
@@ -145,7 +141,7 @@ struct BulkSuperconductor {
         return interpolate_lut(inv_tau_rec_lut_, e_div, MIN_QP_DIV_GAP, MAX_QP_DIV_GAP);
     }
 
-    // Local vortex / gap-depression trapping rate (G4CMPQPLocalTrappingRate)
+    // Local vortex / gap-depression trapping rate
     inline double qp_local_trapping_rate() const noexcept {
         return (trap_tau_s > 0.0 && trap_tau_s < 1e20) ? (1.0 / trap_tau_s) : 0.0;
     }
@@ -153,7 +149,7 @@ struct BulkSuperconductor {
     // --- 5. Singularity-Free Final-State Energy Samplers ---
 
     // Sample daughter QP energy E1 in [Delta, E_ph - Delta] from pair-breaking phonon E_ph
-    // Substitution E1 = Delta + (E_ph - 2*Delta) * sin^2(pi/2 * u) cancels endpoint singularities!
+    // Substitution E1 = Delta + (E_ph - 2*Delta) * sin^2(pi/2 * u) cancels the endpoint singularities.
     inline double sample_pair_breaking_qp_energy(double phonon_eV, Rng& rng) const noexcept {
         const double span = phonon_eV - 2.0 * delta_T_eV;
         if (span <= 0.0) return delta_T_eV;
@@ -172,7 +168,7 @@ struct BulkSuperconductor {
     }
 
     // Sample radiated phonon energy Omega in (0, E_qp - Delta] from a QP of energy E_qp
-    // Substitution E' = E_qp - Omega = Delta + (E_qp - Delta) * u^2 cancels the 1/sqrt(E'^2 - Delta^2) pole!
+    // Substitution E' = E_qp - Omega = Delta + (E_qp - Delta) * u^2 cancels the 1/sqrt(E'^2 - Delta^2) pole.
     inline double sample_radiated_phonon_energy(double qp_eV, Rng& rng) const noexcept {
         const double span = qp_eV - delta_T_eV;
         if (span <= 0.0) return 0.0;
@@ -192,7 +188,7 @@ struct BulkSuperconductor {
         return 0.5 * span;
     }
 
-    // Sample 3D or 2D Gaussian diffusive displacement step for time dt (G4CMPQPDiffusion)
+    // Sample 3D or 2D Gaussian diffusive displacement step for time dt
     inline Vec3 sample_diffusive_step(double qp_eV, double dt, Rng& rng, bool planar_2d = false) const noexcept {
         const double D = qp_diffusivity(qp_eV);
         if (D <= 0.0 || dt <= 0.0) return {0.0, 0.0, 0.0};

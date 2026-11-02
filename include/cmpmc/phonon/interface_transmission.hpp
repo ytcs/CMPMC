@@ -1,5 +1,8 @@
 #pragma once
 
+// Phonon interface transmission models (AMM / DMM); used by SurfaceProperty for
+// substrate-to-film entry.
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -7,11 +10,10 @@
 
 namespace cmpmc::physics {
 
-// ============================================================================
-// Phonon transmission across a welded interface between two ISOTROPIC solids
-// (substrate 1 -> film 2): acoustic mismatch (AMM) and diffuse mismatch (DMM).
+// Phonon transmission across a welded interface between two isotropic solids
+// (substrate 1 -> film 2): acoustic mismatch (AMM) and diffuse mismatch (DMM) models.
 //
-//  AMM (campaign WP8-R Sec. 3.2 [E]; elastodynamic boundary conditions: continuity of the
+//  AMM (elastodynamic boundary conditions: continuity of the
 //  displacement u_x, u_z and of the tractions tau_xz, tau_zz across z = 0):
 //    * normal incidence, mode nu:   t = 4 Z1 Z2 / (Z1 + Z2)^2,  Z = rho v_nu;
 //    * SH (transverse, polarised perpendicular to the plane of incidence), Snell refraction:
@@ -20,14 +22,14 @@ namespace cmpmc::physics {
 //    * P-SV (incident P = L or SV), oblique, with mode conversion: the 4x4 complex linear
 //      system for (R_P, R_S, T_P, T_S); energy-flux coefficients
 //      E_j = rho_j v_j^2 Re(s_zj)|A_j|^2 / (rho_1 v_inc^2 s_z,inc), s_z the vertical slowness
-//      (evanescent waves carry no flux). sum_j E_j = 1 is NOT imposed: it is the test.
-//  DMM (Debye, campaign WP8-R Sec. 3.2):  t_12 = S2 / (S1 + S2),  S = v_L^-2 + 2 v_T^-2.
+//      (evanescent waves carry no flux). sum_j E_j = 1 is not imposed, so it serves as
+//      an independent check of the solution.
+//  DMM (Debye density of states):  t_12 = S2 / (S1 + S2),  S = v_L^-2 + 2 v_T^-2.
 //
 //  Scope: isotropic media (the substrate is replaced by its isotropic (v_L, v_T)); half-space
-//  limit (no film interference: valid for wavelength << d_film, WP8-R Sec. 3.2 "Frequency").
-//  The AMM of an ideal interface is an upper bound: measured Si->Al is 0.3-0.55
-//  (1805.02495 p.1 [FT], as quoted in WP8-R).
-// ============================================================================
+//  limit (no film interference; valid for wavelength << d_film).
+//  The AMM of an ideal interface is an upper bound: measured Si->Al transmission is 0.3-0.55
+//  (arXiv:1805.02495, p. 1).
 struct IsotropicMedium {
     double rho = 0.0;   // kg/m^3
     double vL  = 0.0;   // m/s

@@ -13,17 +13,17 @@
 
 namespace cmpmc {
 
-// ============================================================================
-// SurfaceProperty: Boundary Reflection, Absorption & Kaplan Sensor Model
-// Replaces: G4CMPSurfaceProperty & G4CMPPhononElectrode
-// ============================================================================
+// Boundary model of one crystal surface: phonon absorption and reflection
+// (specular / diffuse / surface down-conversion), charge-carrier absorption and
+// reflection, and an optional superconducting sensor film (Kaplan cascade),
+// interface-transmission model and patterned electrode mask.
 struct SurfaceProperty {
     double prob_abs      = 0.0;   // Probability of phonon entering sensor / boundary absorption
     double prob_refl     = 1.0;   // Probability of phonon reflection if not absorbed
     double refl_cutoff   = 350.0; // GHz cutoff for specular/diffuse polynomials
     double anh_cutoff    = 520.0; // GHz cutoff for surface anharmonicity
 
-    // Charge boundary properties (G4CMPDriftBoundaryProcess)
+    // Charge-carrier boundary properties
     double prob_charge_abs  = 1.0; // Probability of charge absorption/recombination at boundary
     double prob_charge_spec = 0.0; // Specular reflection probability for reflected charges
     double min_k_elec       = 0.0; // Minimum perpendicular wavevector k_perp [1/m] for e- absorption
@@ -37,7 +37,7 @@ struct SurfaceProperty {
     std::optional<KaplanFilm> kaplan_sensor = std::nullopt;
     // Mode- and angle-resolved substrate -> film transmission (isotropic AMM). When set, a phonon
     // reaching an active pad enters the film with probability t_AMM(mode, cos theta_k), which
-    // replaces KaplanFilm::film_absorption (campaign WP8-R Sec. 3.2; IF-AUD-4).
+    // replaces KaplanFilm::film_absorption (see phonon/interface_transmission.hpp).
     std::optional<physics::IsotropicAMMInterface> amm_interface = std::nullopt;
     std::optional<geometry::ElectrodePatternMask> electrode_mask = std::nullopt;
 
@@ -52,16 +52,16 @@ struct SurfaceProperty {
     }
 
     // Frequency-independent specular probability used where the polynomials do not
-    // apply (G4CMP MaterialPropertiesTable "specProb"; G4CMPSurfaceProperty ctor pSpecProb)
+    // apply (above anh_cutoff, or when the corresponding coefficient list is empty).
     double spec_prob_const = 0.0;
-    // true for the G4CMP example coefficients ("not well-motivated" demonstration values,
-    // R15 CMPMC-AUD IF-AUD-4); the engine refuses them unless allow_unvalidated is set.
+    // True for the demonstration polynomial coefficients (demo_polynomial_*); the engine
+    // refuses them unless DetectorModel::allow_unvalidated is set.
     bool demo_values = false;
 
     struct ReflectionSplit { double p_spec, p_diff, p_anh; };
 
-    // Phonon reflection branching exactly as G4CMPSurfaceProperty::{Specular,Diffuse,
-    // Anharmonic}ReflProb + G4CMPPhononBoundaryProcess::DoReflection (normalised):
+    // Phonon reflection branching probabilities at phonon energy `energy_eV`, normalised
+    // to p_spec + p_diff + p_anh = 1 (same piecewise scheme as G4CMP), with f in GHz:
     //   f > anh_cutoff:                p_anh = 0, p_diff = 1 - specProb, p_spec = specProb
     //   refl_cutoff < f <= anh_cutoff: p_anh = P_anh(f), p_diff = P_diff(refl_cutoff),
     //                                  p_spec = 1 - p_diff - p_anh
@@ -86,12 +86,12 @@ struct SurfaceProperty {
         return reflection_split(energy_eV).p_spec;
     }
 
-    // ---- Campaign defaults (no demo constants) ----------------------------------------------
+    // ---- Default surfaces ---------------------------------------------------------------------
     // Fully diffuse (Lambertian) reflection and no surface down-conversion: "Generally diffusive
-    // scattering has been found to be a good model for phonon-surface reflections" (Leman
-    // 1109.1193 Sec. IV.G [FT]). Surface down-conversion has no sourced coefficient (R15
-    // CMPMC-AUD IF-AUD-4), so p_anh = 0; a campaign run that needs it, or a specular fraction,
-    // must supply sourced spec/diff/anh coefficients (and amm_interface for film entry).
+    // scattering has been found to be a good model for phonon-surface reflections" (Leman,
+    // arXiv:1109.1193, Sec. IV.G). No published coefficient for surface down-conversion is
+    // available, so p_anh = 0. Applications that need down-conversion or a specular fraction
+    // must supply their own spec/diff/anh coefficients (and amm_interface for film entry).
     static SurfaceProperty diffuse_al_sensor_surface() {
         SurfaceProperty s = diffuse_bare_surface();
         s.prob_abs      = 1.0;
@@ -110,9 +110,10 @@ struct SurfaceProperty {
         return s;
     }
 
-    // ---- G4CMP examples/phonon DEMONSTRATION values (guarded: demo_values = true) ------------
-    // G4CMP's own documentation calls these polynomials "not well-motivated"; they reproduce the
-    // G4CMP example (R15 CMPMC-AUD T9) and must not feed a campaign number.
+    // ---- Demonstration polynomials (experimental: demo_values = true) -----------------------
+    // Example coefficients distributed with G4CMP, documented there as not well motivated and
+    // intended only for demonstration. Provided for comparison; the engine refuses them unless
+    // DetectorModel::allow_unvalidated is set.
     static SurfaceProperty demo_polynomial_sensor_surface() {
         SurfaceProperty s = demo_polynomial_bare_surface();
         s.prob_abs      = 1.0;

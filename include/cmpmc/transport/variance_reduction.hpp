@@ -1,5 +1,7 @@
 #pragma once
 
+// Variance-reduction utilities used by the transport engine.
+
 #include "cmpmc/core/rng.hpp"
 #include <cstdint>
 

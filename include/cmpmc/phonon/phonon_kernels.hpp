@@ -10,19 +10,14 @@
 
 namespace cmpmc::physics {
 
-// ============================================================================
-// Pure Phonon Physics Equations
+// Phonon physics kernels: stateless functions for
+//   1. the anisotropic Christoffel wave equation and group velocity,
+//   2. isotope (mass-defect) elastic scattering (S. Tamura, Phys. Rev. B 31, 2574 (1985)),
+//   3. three-phonon anharmonic down-conversion rates and energy-partition PDFs.
 //
-// This file contains the human-readable analytical equations for:
-//   1. Anisotropic Christoffel Wave Equation & Group Velocity
-//   2. Tamura Isotope Elastic Scattering Rate (PRB 31, 1985)
-//   3. Tamura Three-Phonon Anharmonic Downconversion Rates & PDFs (PRB 31, 1985)
-//
-// Note for Physicists:
-//   If you modify any rate or PDF formula in this file, the engine's startup
-//   LUT builder (`include/cmpmc/engine/lut.hpp`) will automatically tabulate
-//   your new equations into fast O(1) lookup tables at initialization!
-// ============================================================================
+// CrystalLattice tabulates the rate and PDF functions defined here into O(1)
+// lookup tables at construction, so a change to a formula in this file takes
+// effect without touching the sampling code.
 
 // --- 1. Bulk Scattering Rates ---
 
@@ -43,7 +38,7 @@ inline constexpr double anharmonic_decay_rate(PhononMode mode, double energy_eV,
     return A_anh * (nu2 * nu2 * nu);
 }
 
-// Polycrystalline grain-boundary elastic scattering rate (G4CMPPhononPolycrystalElasticScattering):
+// Polycrystalline grain-boundary elastic scattering rate:
 //   Gamma_poly = v_group / lambda_polycrystal   [1/s]
 inline constexpr double polycrystal_scattering_rate(double vg_mag, double polycrystal_mfp_m) noexcept {
     if (polycrystal_mfp_m <= 0.0) return 0.0;
@@ -85,7 +80,7 @@ inline double decay_angle_T_from_LT(double x, double v_L, double v_T) noexcept {
 // Opening angle theta_T of outgoing T phonon with energy fraction x in L -> T + T decay.
 // Momentum closure k_L = k_T1 + k_T2 with k_L = E/v_L, k_T1 = xE/v_T, k_T2 = (1-x)E/v_T gives
 //   cos(theta_T1) = (1 - m^2 (1-x)^2 + m^2 x^2) / (2 m x)
-// (Leman, arXiv:1109.1193 Eq. (13); G4CMPAnharmonicDecay::MakeTTDeviation). The second
+// (Leman, arXiv:1109.1193, Eq. (13)). The second
 // daughter uses x -> 1 - x (Leman Eq. (14)).
 inline double decay_angle_TT(double x, double v_L, double v_T) noexcept {
     const double m = v_L / v_T;
@@ -96,7 +91,7 @@ inline double decay_angle_TT(double x, double v_L, double v_T) noexcept {
 // Unnormalized energy partition PDF for L -> L' + T, x = E_L'/E_L, m = v_L/v_T:
 //   P(x) ~ (1/x^2) (1 - x^2)^2 [(1 + x)^2 - m^2 (1 - x)^2] [1 + x^2 - m^2 (1 - x)^2]^2
 // on (m - 1)/(m + 1) < x < 1 (Leman, arXiv:1109.1193 Eq. (9), quoting Tamura PRB 31,
-// 2574 (1985); identical to G4CMPAnharmonicDecay::GetLTDecayProb).
+// 2574 (1985)).
 inline double tamura_lt_pdf(double x, const CrystalConfig& cfg) noexcept {
     const double m = cfg.v_sound / cfg.v_trans;
     const double xmin = (m - 1.0) / (m + 1.0);
@@ -113,7 +108,7 @@ inline double tamura_lt_pdf(double x, const CrystalConfig& cfg) noexcept {
 //   P ~ [A + B m X - B X^2]^2 + [C X (m - X) - D/(m - X) (X - m - (1 - m^2)/(4X))]^2,
 //   A = (1 - m^2)[beta + lambda + (1 + m^2)(gamma + mu)]/2, B = beta + lambda + 2 m^2 (gamma + mu),
 //   C = beta + lambda + 2 (gamma + mu), D = (1 - m^2)(2 beta + 4 gamma + lambda + 3 mu)
-// (identical to G4CMPAnharmonicDecay::GetTTDecayProb(d, x*d)); symmetric under x -> 1 - x.
+// Symmetric under x -> 1 - x.
 inline double tamura_tt_pdf(double x, const CrystalConfig& cfg) noexcept {
     const double m = cfg.v_sound / cfg.v_trans;
     const double xmin = 0.5 * (1.0 - 1.0 / m);
@@ -251,7 +246,7 @@ inline void solve_christoffel_exact(const double C[3][3][3][3],
 // --- 5. Closed-form Christoffel solve (trigonometric Cardano roots + cross-product eigenvectors) ---
 // Eigenvalues of the symmetric 3x3 D: with q = tr D/3, p = sqrt(tr((D - qI)^2)/6), B = (D - qI)/p,
 // r = det(B)/2: lambda_k = q + 2p cos(acos(r)/3 + 2 pi k/3) (Smith, CACM 4, 168 (1961); standard
-// algebra [D]). Eigenvector of lambda: the largest cross product of two rows of D - lambda I.
+// algebra). Eigenvector of lambda: the largest cross product of two rows of D - lambda I.
 // Near a degeneracy (relative eigenvalue gap < gap_tol, e.g. FT/ST along [100], [111]) the
 // eigenvectors are ill-conditioned: fall back to the Jacobi solve.
 inline void solve_christoffel_cardano(const double C[3][3][3][3], double density, const Vec3& k_unit,

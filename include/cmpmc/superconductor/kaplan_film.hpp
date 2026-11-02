@@ -1,5 +1,7 @@
 #pragma once
 
+// Superconducting sensor film: Kaplan quasiparticle cascade and its lookup-table surrogate.
+
 #include "cmpmc/core/core.hpp"
 #include "cmpmc/materials/crystal_config.hpp"
 #include "cmpmc/materials/presets.hpp"
@@ -10,29 +12,23 @@
 
 namespace cmpmc {
 
-// ============================================================================
-// KaplanFilm: Lumped Superconducting Thin-Film Quasiparticle Cascade Model
-// Replaces: G4CMPKaplanQP & G4CMPVKaplanQP (S.B. Kaplan et al., PRB 14, 1976)
+// KaplanFilm: lumped quasiparticle cascade in a superconducting sensor film
+// (S. B. Kaplan et al., Phys. Rev. B 14, 4854 (1976)).
 //
-// Key Optimization over G4CMP:
-//   G4CMPVKaplanQP::QPEnergyRand and PhononEnergyRand use uniform rejection
-//   sampling on [Delta + eps, E - Delta - eps] with BUFF=1000 to avoid the
-//   1/sqrt(x^2 - Delta^2) endpoint singularities, resulting in ~15-30 rejection
-//   trials per broken Cooper pair.
-//   Here we apply exact analytic change-of-variables:
-//     1) QP pair breaking: x = Delta + (E - 2*Delta) * sin^2(pi/2 * u)
-//        cancels 1 / sqrt((x - Delta)*(E - Delta - x)) identically!
-//     2) QP phonon emission: x = Delta + (E - Delta) * u^2
-//        cancels 1 / sqrt(x - Delta) identically!
-//   Result: Exact endpoint sampling (no BUFF=1000 truncation) and >90%
-//   acceptance on the very first random draw.
-// ============================================================================
+// The pair-breaking and phonon-emission energy densities have inverse-square-root
+// endpoint singularities. They are sampled with changes of variable that cancel
+// the singularities exactly, so no endpoint truncation is needed and most draws
+// are accepted on the first try:
+//   1) pair breaking:       x = Delta + (E - 2 Delta) sin^2(pi u / 2)
+//                           cancels 1 / sqrt((x - Delta)(E - Delta - x));
+//   2) QP phonon emission:  x = Delta + (E - Delta) u^2
+//                           cancels 1 / sqrt(x - Delta).
 struct KaplanFilm : public SuperconductorFilmConfig {
     constexpr KaplanFilm() noexcept = default;
     constexpr explicit KaplanFilm(const SuperconductorFilmConfig& cfg) noexcept
         : SuperconductorFilmConfig(cfg) {}
 
-    // Standard Aluminum QET sensor parameters from G4CMP examples/phonon
+    // Aluminium QET sensor film with the default SuperconductorFilmConfig parameters
     static constexpr KaplanFilm aluminum_sensor() noexcept {
         return KaplanFilm(materials::AluminumFilm());
     }
@@ -57,10 +53,9 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         return std::exp(-path / mfp);
     }
 
-    // Main entry point matching G4CMPKaplanQP::AbsorbPhonon
     // ------------------------------------------------------------------------
-    // Exact T = 0 Kaplan pair-breaking rate (Kaplan PRB 14, 4854 (1976), as implemented in
-    // G4CMPSCPairBreakingRate and quoted by 1401.1937 via tau_0^phi):
+    // Exact T = 0 Kaplan pair-breaking rate (Kaplan et al., PRB 14, 4854 (1976); tau0 is the
+    // tau_0^phi of arXiv:1401.1937):
     //   1/tau_pb(Omega) = I(Omega) / (pi D tau0),
     //   I(Omega) = Int_D^{Omega-D} dE [E(Omega-E) + D^2] / sqrt((E^2-D^2)((Omega-E)^2-D^2)),
     // so 1/tau_pb(2D) = 1/tau0 exactly. With E = D + (s/2)(1 - cos t), s = Omega - 2D, the
@@ -84,7 +79,7 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         if (gap_energy <= 0.0 || phonon_lifetime <= 0.0 || omega < 2.0 * gap_energy) return 0.0;
         return kaplan_pb_integral(omega) / (units::pi * gap_energy * phonon_lifetime);
     }
-    // Film-loss time from geometry: mean escape path 4d (2302.05998 Eq. (17) [FT]: 2 x 2d,
+    // Film-loss time from geometry: mean escape path 4d (arXiv:2302.05998, Eq. (17): 2 x 2d,
     // traversal and angle average), tau_l = 4 d / (eta_t v_s) with interface transmission eta_t.
     static inline double loss_time_from_geometry(double d_film, double v_s, double eta_t) noexcept {
         return (eta_t > 0.0 && v_s > 0.0) ? 4.0 * d_film / (eta_t * v_s) : 0.0;
@@ -101,8 +96,8 @@ struct KaplanFilm : public SuperconductorFilmConfig {
     }
 
     // Seed of the first Cooper-pair split: a phonon entering the film (case I coherence
-    // factor 1 + D^2/E1E2) or a photon absorbed in it (case II, 1 - D^2/E1E2; 1401.1937
-    // Eq. (1) [FT]; WP5-v4 Sec. 5). A photon seed skips the entry-escape step.
+    // factor 1 + D^2/E1E2) or a photon absorbed in it (case II, 1 - D^2/E1E2;
+    // arXiv:1401.1937, Eq. (1)). A photon seed skips the entry-escape step.
     enum class Seed : uint8_t { Phonon, Photon };
 
     double absorb_phonon(double energy, KaplanBuffer& reflected_energies, Rng& rng) const noexcept {
@@ -228,7 +223,7 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         }
     }
 
-    // Case-II (photon) split: weight [x(E-x) - D^2]/sqrt((x^2-D^2)((E-x)^2-D^2)) (1401.1937 Eq. (1) [FT])
+    // Case-II (photon) split: weight [x(E-x) - D^2]/sqrt((x^2-D^2)((E-x)^2-D^2)) (arXiv:1401.1937, Eq. (1))
     inline double sample_qp_energy_case2(double E, Rng& rng) const noexcept {
         const double d = gap_energy;
         const double span = E - 2.0 * d;
@@ -245,7 +240,7 @@ struct KaplanFilm : public SuperconductorFilmConfig {
         }
     }
 
-    // Pair-breaking efficiency and QP Fano factor of one absorbed quantum (WP5-v4 (W13)):
+    // Pair-breaking efficiency and QP Fano factor of one absorbed quantum:
     //   eta_pb = D <N_qp>/Omega,  F_qp = Var(N_qp)/<N_qp>  (E_sig = D N_qp; requires
     //   subgap_absorption = 0 and absorber_eff = 1 so that the cascade's edep = D N_qp).
     struct PairBreakingResult { double eta = 0, eta_err = 0, F_qp = 0; };
@@ -325,20 +320,16 @@ private:
     }
 };
 
-// ============================================================================
-// KaplanSurrogateLUT: pre-sampled Kaplan cascade outcomes for SIMD / GPU paths.
+// KaplanSurrogateLUT: pre-sampled Kaplan cascade outcomes for fast lookup.
 //   For each of N_E incident energies on [2 Delta, 2 Delta * E_MAX_DIV_2GAP] the
 //   constructor stores N_S complete outcomes of KaplanFilm::absorb_phonon: the
 //   absorbed fraction and the individual re-emitted phonon energies (as fractions
 //   of the incident energy). A lookup draws one stored outcome from one of the two
 //   bracketing energy nodes (chosen with linear-interpolation probabilities) and
 //   rescales it to the incident energy. Energies outside the table are passed to
-//   the full cascade.
-//   History: the original table stored only (abs_frac, sum of reflected fractions)
-//   and re-emitted the sum as ONE phonon, which then re-broke pairs on re-entry
-//   (collected fraction +13% in a p_ret = 0.9 cavity, tests/test_kaplan), used the
-//   lower energy node only (+10% at 3 Delta) and clamped at 40 Delta.
-// ============================================================================
+//   the full cascade. Storing individual re-emitted phonons (rather than their
+//   summed energy) is required for correct re-entry statistics in reflective
+//   geometries.
 class KaplanSurrogateLUT {
 public:
     static constexpr int N_E = 128;                 // energy nodes

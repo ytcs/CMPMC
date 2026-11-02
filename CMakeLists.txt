@@ -23,6 +23,7 @@ include(CMakePackageConfigHelpers)
 
 option(CMPMC_BUILD_TESTS        "Build the test suite"                              ${PROJECT_IS_TOP_LEVEL})
 option(CMPMC_BUILD_EXAMPLES     "Build the example programs"                        ${PROJECT_IS_TOP_LEVEL})
+option(CMPMC_BUILD_BENCHMARKS   "Build the comparison benchmark (benchmarks/)"      OFF)
 option(CMPMC_WARNINGS_AS_ERRORS "Treat compiler warnings as errors (tests/examples)" OFF)
 option(CMPMC_NATIVE_ARCH        "Compile tests/examples with -march=native"         OFF)
 option(CMPMC_INSTALL            "Generate install and package-config rules"         ${PROJECT_IS_TOP_LEVEL})
@@ -61,6 +62,11 @@ endif()
 
 if(CMPMC_BUILD_EXAMPLES)
     add_subdirectory(examples)
+endif()
+
+if(CMPMC_BUILD_BENCHMARKS)
+    add_executable(cmpmc_bench benchmarks/cmpmc_bench.cpp)
+    target_link_libraries(cmpmc_bench PRIVATE cmpmc::cmpmc cmpmc_build_options)
 endif()
 
 if(CMPMC_BUILD_TESTS)

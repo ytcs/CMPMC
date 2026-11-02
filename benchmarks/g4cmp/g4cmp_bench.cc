@@ -186,9 +186,6 @@ int main(int argc, char** argv) {
     const long seed = argc > 3 ? std::atol(argv[3]) : 12345;
     if (argc > 4) g_voltage = std::atof(argv[4]) * volt;
     if (g_mode == "charge") setenv("G4CMP_LUKE_SAMPLE", "0", 1);
-    // G4CMP kills charges at their first reflection by default; CMPMC reflects them
-    // from the sidewall, so allow reflections here to keep the workloads identical.
-    if (g_mode != "phonon") setenv("G4CMP_EH_BOUNCES", "1000", 1);
 
     CLHEP::HepRandom::setTheSeed(seed);
     const auto t0 = std::chrono::steady_clock::now();

@@ -44,8 +44,9 @@ int main(int argc, char** argv) {
     det.allow_unvalidated = true;   // the example's polynomial surface coefficients are guarded
     SurfaceProperty sensor = SurfaceProperty::demo_polynomial_sensor_surface();
     sensor.prob_abs = 0.3;
-    SurfaceProperty wall = SurfaceProperty::demo_polynomial_bare_surface();
-    wall.prob_charge_abs = 0.0;      // charges reflect from the sidewall
+    // Charges are absorbed at every surface, the default of both codes (G4CMP's
+    // charge-bounce limit of 0 turns any surface contact into absorption).
+    const SurfaceProperty wall = SurfaceProperty::demo_polynomial_bare_surface();
     det.surfaces = {sensor, sensor, wall};
     det.max_bounces = 100;
     det.e_field = UniformElectricField::from_bias(mode == "phonon" ? 0.0 : voltage, 2.54 * units::cm);

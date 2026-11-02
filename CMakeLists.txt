@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 cmake_minimum_required(VERSION 3.21)
 
 # Single source of truth for the version: include/cmpmc/version.hpp
@@ -10,6 +13,7 @@ string(REGEX MATCH "CMPMC_VERSION_PATCH ([0-9]+)" _ "${_cmpmc_version_hpp}")
 set(_cmpmc_patch ${CMAKE_MATCH_1})
 
 project(cmpmc
+    HOMEPAGE_URL "https://github.com/ytcs/CMPMC"
     VERSION ${_cmpmc_major}.${_cmpmc_minor}.${_cmpmc_patch}
     DESCRIPTION "Monte Carlo transport of phonons, charge carriers and quasiparticles in cryogenic crystals"
     LANGUAGES CXX)
@@ -77,6 +81,7 @@ if(CMPMC_INSTALL)
     write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/cmpmcConfigVersion.cmake
         COMPATIBILITY SameMinorVersion
         ARCH_INDEPENDENT)
+    install(FILES LICENSE NOTICE README.md DESTINATION ${CMAKE_INSTALL_DOCDIR})
     install(FILES
         ${CMAKE_CURRENT_BINARY_DIR}/cmpmcConfig.cmake
         ${CMAKE_CURRENT_BINARY_DIR}/cmpmcConfigVersion.cmake

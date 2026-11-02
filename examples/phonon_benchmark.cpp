@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Feature tour and throughput benchmark.
 //
 // Runs one short demonstration per module and a multithreaded phonon transport

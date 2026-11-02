@@ -45,6 +45,19 @@ Any change to a model, default or constant needs all of the following:
   external data.
 - Use fixed seeds. Keep each test under a minute in a Release build where possible.
 
+## Licensing of contributions
+
+CMPMC is licensed under GPL-3.0-or-later. By submitting a contribution, you agree
+that it is licensed under the same terms. Every new source file starts with:
+
+```cpp
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+```
+
+If you bring in third-party code or data, it must be under a GPL-3.0-compatible
+license, and you must add it to [NOTICE](NOTICE).
+
 ## Commits and pull requests
 
 - Keep each commit to one logical change, with a message that says what changed and why.

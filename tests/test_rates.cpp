@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Bulk phonon rate laws (source form, nu in Hz):
 //   Gamma_iso = B nu^4 for every mode (Tamura; arXiv:2408.04732, Eq. (3)), Gamma_anh = A nu^5
 //   for L only (isotropic continuum approximation; arXiv:2408.04732, Eq. (1); arXiv:2302.04315).

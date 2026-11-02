@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Leman second-order charge time stepping (DetectorModel::ChargeStepping::LemanSecondOrder;
 // Leman, arXiv:1109.1193, Sec. V.E, Eqs. (26)-(30)) against a converged first-order reference.
 //  Reference: first-order stepping with the wavevector change per step <= 0.01 max(k_s, |k|)

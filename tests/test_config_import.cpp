@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // io::import_g4cmp_config on a synthetic file: keywords, units, comments, unknown keys
 // and the defaults of fields the file does not set.
 #include "test_support.hpp"

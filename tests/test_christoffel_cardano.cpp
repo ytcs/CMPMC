@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Closed-form (trigonometric Cardano + cross-product) Christoffel solve against the
 // Jacobi solve (validated in test_christoffel) and the [100]/[110]/[111] closed forms, for cubic (Si, Ge, GaAs),
 // trigonal (sapphire, alpha-quartz) and tetragonal (CaWO4) stiffness tensors.

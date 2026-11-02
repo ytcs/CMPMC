@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Fano binomial sampler and the energy partition.
 //  (a) sample_fano_binomial: <N> = n_bar and Var N / n_bar = F for n_bar in [2, 1e4],
 //      F in {0.119, 0.15, 0.30} (Fano's definition, arXiv:2004.10709, Eq. (3));

@@ -113,7 +113,7 @@ features listed in [docs/experimental.md](docs/experimental.md), throw
 
 ## Acknowledgements
 
-Several models, default parameters and the material data format follow
+Several models, default parameters and the material data format come from
 [G4CMP](https://github.com/kelseymh/G4CMP), the condensed-matter extension to
 Geant4. CMPMC can import G4CMP `config.txt` lattice files directly
 (`cmpmc::io::import_g4cmp_config`). The physics references for each model are listed in
@@ -121,5 +121,10 @@ Geant4. CMPMC can import G4CMP `config.txt` lattice files directly
 
 ## License
 
-No license has been selected yet. Until a `LICENSE` file is added, all rights are
-reserved by the copyright holder.
+CMPMC is licensed under the **GNU General Public License v3.0 or later**
+(`GPL-3.0-or-later`); see [LICENSE](LICENSE). Parts of CMPMC are derived from
+G4CMP, which is distributed under the same license; see [NOTICE](NOTICE).
+
+The license allows commercial use and redistribution. If you distribute software
+that includes or links CMPMC, you must release it under GPL-compatible terms
+and provide its source code.

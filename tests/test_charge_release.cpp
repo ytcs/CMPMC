@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Energy released at carrier collection (DetectorModel::charge_release).
 //  Energy bookkeeping at collection: the pair energy is converted to heat at the contact,
 //  E_rel = E_kin + (E_c - mu_F) for e-, E_kin + (mu_F - E_v) for h+.

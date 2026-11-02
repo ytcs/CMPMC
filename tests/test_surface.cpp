@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Phonon surface reflection branching (specular / diffuse / surface down-conversion)
 // against an independent evaluation of the piecewise polynomial model, using the
 // demonstration coefficients of SurfaceProperty::demo_polynomial_bare_surface()

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 #pragma once
 
 // Superconducting sensor film: Kaplan quasiparticle cascade and its lookup-table surrogate.

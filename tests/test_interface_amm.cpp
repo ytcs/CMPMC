@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Isotropic AMM / DMM phonon interface transmission (phonon/interface_transmission.hpp)
 //  (a) P-SV oblique AMM: energy-flux conservation R_P + R_S + T_P + T_S = 1 at every angle and
 //      both incident modes (not imposed by the solver: an independent check of the 4x4 boundary

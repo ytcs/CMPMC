@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Energy closure of the phonon transport loop: for a short Ge run with the default
 // detector, deposited + escaped/killed energy equals the injected energy.
 #include "test_support.hpp"

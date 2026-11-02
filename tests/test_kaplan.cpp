@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Kaplan thin-film QP cascade (KaplanFilm), its surrogate table, and the
 // 3D Bogoliubov-QP rates (BulkSuperconductor).
 //  (a) pair-breaking QP-energy sampler and QP phonon-emission sampler vs the Kaplan

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 #pragma once
 
 // Energy partition of a deposit into charge carriers and prompt phonons, and the

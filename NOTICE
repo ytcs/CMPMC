@@ -1,0 +1,25 @@
+CMPMC
+Copyright (C) 2026 TC Yu and the CMPMC contributors
+
+CMPMC is free software: you can redistribute it and/or modify it under the terms
+of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version. See the
+LICENSE file for the full text.
+
+CMPMC is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+------------------------------------------------------------------------------
+Third-party material
+------------------------------------------------------------------------------
+
+G4CMP (https://github.com/kelseymh/G4CMP)
+  Licensed under the GNU General Public License version 3 or later.
+
+  Parts of CMPMC are derived from G4CMP: implementations of several physics
+  models and parameterisations, the material constants of the built-in presets
+  (G4CMP CrystalMaps), the tabulated Sarkis ionisation yield, the example surface
+  reflection coefficients, and the config.txt lattice-file format read by
+  cmpmc::io::import_g4cmp_config. These portions remain subject to the copyright
+  of the G4CMP authors and are distributed here under the same license.

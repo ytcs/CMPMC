@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Charge-carrier kinematics, valley orientation and intervalley rates.
 //  (a) Herring-Vogt valley axes follow the crystal orientation: with orient = R the
 //      electron velocity for detector-frame momentum R p must equal R v(p) of the

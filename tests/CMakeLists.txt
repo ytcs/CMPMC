@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 # Each test program prints "name value reference rel_err PASS|FAIL" lines and
 # exits nonzero if a check fails. See docs/validation.md for what each test
 # checks and against which reference.

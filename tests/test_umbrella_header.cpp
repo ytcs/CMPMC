@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Every public header compiles in one translation unit: the umbrella header
 // (supported API) together with the experimental headers, and the version macros
 // agree with the constexpr version object.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Christoffel solver and group-velocity lookup tables.
 //  (a) phase velocities along [100], [110], [111] vs the closed cubic forms;
 //  (b) group velocity vs a central finite difference of omega(k) = |k| v_p(k_hat);

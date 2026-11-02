@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Anharmonic L-phonon decay in the isotropic approximation.
 //  (a) daughter angles conserve crystal momentum (k_L = k_1 + k_2) for every allowed x;
 //  (b) daughter energy-fraction distributions sampled from CMPMC's inverse-CDF tables

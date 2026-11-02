@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Material presets against independent references.
 //  (a) isotope constant B rebuilt independently, B = 4 pi^3 Gamma_md Omega <v^-3>,
 //      <v^-3> = (1/3) sum_modes <v_p^-3>_{4pi} from CMPMC's own Christoffel solver and

@@ -58,6 +58,9 @@ breaking changes.
 - The `UnvalidatedModuleError` message now points to `docs/validation.md`.
 
 ### Added
+- The project is licensed under GPL-3.0-or-later (`LICENSE`), matching G4CMP, from
+  which parts of the code and data are derived (`NOTICE`). SPDX identifiers are added to
+  all source files.
 - `cmpmc/cmpmc.hpp` umbrella header and `cmpmc/version.hpp`.
 - `examples/quickstart.cpp` and `examples/custom_excitation.cpp`.
 - Documentation set under `docs/`, plus `CONTRIBUTING.md` and this changelog.

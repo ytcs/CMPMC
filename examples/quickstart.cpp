@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Minimal CMPMC program: propagate phonons in a germanium detector with
 // aluminium sensor films on both faces and report where the energy went.
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Frequency- and film-loss-dependent pair-breaking efficiency eta_pb(Omega, tau_l)
 // of the Kaplan cascade with rate-competition film loss (FilmLossModel::KaplanRateCompetition).
 //  (a) exact T = 0 Kaplan pair-breaking rate 1/tau_pb(Omega) = I(Omega)/(pi D tau0):

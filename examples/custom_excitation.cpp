@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Defining a new excitation species for SimulationEngine::transport_custom_excitation.
 //
 // A model is any type satisfying cmpmc::ExcitationModel: it provides a bulk

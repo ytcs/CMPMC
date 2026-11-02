@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // G4CMP config.txt import, and agreement of the built-in presets with the
 // corresponding G4CMP CrystalMaps entries.
 //

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Charge drift and Neganov-Trofimov-Luke (NTL) emission.
 //  (a) l0 = pi hbar^4 rho / (2 m^3 Xi^2) vs Leman, arXiv:1109.1193, Table II;
 //  (b) implemented emission rate vs the theta-integral of Leman Eq. (22)

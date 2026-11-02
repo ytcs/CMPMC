@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 TC Yu and the CMPMC contributors
+
 // Runtime guards on experimental modules without a validated reference path (core/validation.hpp).
 // Each guarded entry point must throw UnvalidatedModuleError by default and run when the caller
 // opts in (DetectorModel::allow_unvalidated / the NEE argument). Validated paths must not throw.

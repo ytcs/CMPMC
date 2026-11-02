@@ -5,8 +5,9 @@
 //
 // The detector reproduces G4CMP's examples/phonon configuration, which is also
 // what benchmarks/g4cmp/g4cmp_bench.cc builds: Ge cylinder R = 3.81 cm,
-// half-height 1.27 cm, Al Kaplan films on both faces entered with probability 0.3,
-// the example's polynomial reflection model on every surface, and G4CMP's
+// half-height 1.27 cm, Al Kaplan films on both faces (film entry probability 0.2
+// per sensor hit, otherwise reflection), the example's polynomial reflection model
+// on every surface, and G4CMP's
 // default limit of 100 surface bounces per phonon. Single thread; the timed
 // region is transport only.
 //
@@ -43,7 +44,7 @@ int main(int argc, char** argv) {
     DetectorModel det;
     det.allow_unvalidated = true;   // the example's polynomial surface coefficients are guarded
     SurfaceProperty sensor = SurfaceProperty::demo_polynomial_sensor_surface();
-    sensor.prob_abs = 0.3;
+    sensor.prob_abs = 1.0;   // film entry = film_absorption (0.2), as in g4cmp_bench
     // Charges are absorbed at every surface, the default of both codes (G4CMP's
     // charge-bounce limit of 0 turns any surface contact into absorption).
     const SurfaceProperty wall = SurfaceProperty::demo_polynomial_bare_surface();
@@ -61,7 +62,7 @@ int main(int argc, char** argv) {
     std::vector<SensorHit> hits;
     std::vector<PhononTrack> phonons;
     std::vector<ChargeTrack> carriers;
-    unsigned long long tracks = 0;
+    unsigned long long primaries = 0;
     const size_t n_valleys = lattice.config().valley_dirs.size();
 
     for (int ev = 0; ev < events; ++ev) {
@@ -71,13 +72,13 @@ int main(int argc, char** argv) {
             phonons.push_back(engine.make_track({0, 0, 0}, rng.isotropic_dir(), m, 7.5e-3));
             stats.total_injected_eV += 7.5e-3;
             engine.transport(phonons, hits, stats, rng);
-            ++tracks;
+            ++primaries;
         } else {
             const auto valley = static_cast<uint16_t>(rng.uniform() * n_valleys) % n_valleys;
             carriers.push_back(charges.make_charge(ExcitationType::Electron, {0, 0, 0}, rng.isotropic_dir(), 1e-6, valley));
             carriers.push_back(charges.make_charge(ExcitationType::Hole, {0, 0, 0}, rng.isotropic_dir(), 1e-6, 0));
             engine.transport_charges(carriers, phonons, hits, stats, rng);
-            tracks += 2 + phonons.size();
+            primaries += 2;
             if (!phonons.empty()) engine.transport(phonons, hits, stats, rng);
         }
     }
@@ -86,11 +87,11 @@ int main(int argc, char** argv) {
     const double init_s = std::chrono::duration<double>(t1 - t0).count();
     const double run_s = std::chrono::duration<double>(t2 - t1).count();
     std::printf("code=CMPMC mode=%s kinematics=%s events=%d init_s=%.3f run_s=%.3f us_per_event=%.1f "
-                "steps=%llu phonon_steps=%llu charge_steps=%llu tracks=%llu edep_eV=%.6f luke_phonons=%llu\n",
+                "steps=%llu phonon_steps=%llu charge_steps=%llu primaries=%llu edep_eV=%.6f luke_phonons=%llu\n",
                 mode.c_str(), kin.c_str(), events, init_s, run_s, 1e6 * run_s / events,
                 static_cast<unsigned long long>(stats.total_steps + stats.charge_steps),
                 static_cast<unsigned long long>(stats.total_steps),
-                static_cast<unsigned long long>(stats.charge_steps), tracks, stats.total_deposited_eV,
+                static_cast<unsigned long long>(stats.charge_steps), primaries, stats.total_deposited_eV,
                 static_cast<unsigned long long>(stats.luke_phonons_emitted));
     return 0;
 }

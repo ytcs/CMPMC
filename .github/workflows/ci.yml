@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMPMC_WARNINGS_AS_ERRORS=ON
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMPMC_WARNINGS_AS_ERRORS=ON -DCMPMC_BUILD_BENCHMARKS=ON
       - name: Build
         run: cmake --build build -j
       - name: Test

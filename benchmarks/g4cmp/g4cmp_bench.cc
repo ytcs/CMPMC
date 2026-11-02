@@ -4,16 +4,20 @@
 // G4CMP side of the CMPMC-vs-G4CMP speed comparison.
 //
 // Geometry, surfaces and sensor film are those of G4CMP's examples/phonon:
-// a Ge cylinder (R = 3.81 cm, half-height 1.27 cm, [100] along z), Al films on
-// both faces (phonon absorption probability 0.3, Kaplan film parameters of the
-// example), and the example's polynomial reflection model on all surfaces.
+// a Ge cylinder (R = 3.81 cm, half-height 1.27 cm, [100] along z), Al Kaplan films
+// on both faces with the example's film parameters, and the example's polynomial
+// reflection model on all surfaces. One deliberate change: the sensor faces' simple
+// (non-film) phonon absorption probability is 0 instead of 0.3, so that a sensor
+// hit is processed identically in both codes (film entry with probability 0.2,
+// otherwise reflection).
 // Nothing is written to disk; the timed region is BeamOn() only.
 //
 // Usage: g4cmp_bench <mode> <events> [seed] [voltage_V]
 //   mode = phonon   one 7.5 meV phonon per event, mode drawn from the Ge DOS
 //          charge   one e-/h+ pair per event at the centre, uniform field,
-//                   Luke phonons not tracked (G4CMP_LUKE_SAMPLE=0 is set here)
-//          chargefull  as "charge", but every Luke phonon is tracked
+//                   no Luke phonons produced
+//          chargefull  as "charge", but every Luke phonon is produced and tracked
+//   Charge modes produce no recombination phonons when a carrier is absorbed.
 
 #include "G4Box.hh"
 #include "G4CMPConfigManager.hh"
@@ -23,6 +27,7 @@
 #include "G4CMPLogicalBorderSurface.hh"
 #include "G4CMPPhononElectrode.hh"
 #include "G4CMPPhysicsList.hh"
+#include "G4CMPStackingAction.hh"
 #include "G4CMPSurfaceProperty.hh"
 #include "G4CMPUtils.hh"
 #include "G4Event.hh"
@@ -45,6 +50,7 @@
 #include "G4UniformElectricField.hh"
 #include "G4UserSteppingAction.hh"
 #include "G4UserTrackingAction.hh"
+#include "G4VProcess.hh"
 #include "G4VUserActionInitialization.hh"
 #include "G4VUserDetectorConstruction.hh"
 #include "G4VUserPrimaryGeneratorAction.hh"
@@ -57,11 +63,13 @@
 
 namespace {
 
+constexpr G4double GHz = 1e9 * hertz;  // not defined by G4SystemOfUnits
+
 std::string g_mode = "phonon";
 double g_voltage = 4.0 * volt;
 
 struct Counters {
-    unsigned long long steps = 0, phonon_steps = 0, charge_steps = 0, tracks = 0;
+    unsigned long long steps = 0, phonon_steps = 0, charge_steps = 0, tracks = 0, luke_phonons = 0;
     double edep_eV = 0.0;
 } g_count;
 
@@ -94,9 +102,12 @@ public:
         const G4double anhCutoff = 520., reflCutoff = 350.;
 
         auto sensor = [&](const char* name) {
-            auto* s = new G4CMPSurfaceProperty(name, 1.0, 0.0, 0.0, 0.0, 0.3, 1.0, 0.0, 0.0);
-            s->AddScatteringProperties(anhCutoff, reflCutoff, anh, diff, spec, GHz, GHz, GHz);
-            auto* mpt = s->GetPhononMaterialPropertiesTablePointer();
+            // pAbsProb = 0 (the stock example uses 0.3): a phonon reaching a sensor face
+            // then enters the Kaplan film with probability filmAbsorption and otherwise
+            // reflects, which is exactly CMPMC's sensor model with prob_abs = 1.
+            auto* prop = new G4CMPSurfaceProperty(name, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
+            prop->AddScatteringProperties(anhCutoff, reflCutoff, anh, diff, spec, GHz, GHz, GHz);
+            auto* mpt = prop->GetPhononMaterialPropertiesTablePointer();
             G4CMP::UpdateMPT(mpt, "filmAbsorption", 0.20);
             G4CMP::UpdateMPT(mpt, "filmThickness", 600. * nm);
             G4CMP::UpdateMPT(mpt, "gapEnergy", 173.715e-6 * eV);
@@ -105,8 +116,8 @@ public:
             G4CMP::UpdateMPT(mpt, "phononLifetimeSlope", 0.29);
             G4CMP::UpdateMPT(mpt, "vSound", 3.26 * km / s);
             G4CMP::UpdateMPT(mpt, "subgapAbsorption", 0.1);
-            s->SetPhononElectrode(new G4CMPPhononElectrode);
-            return s;
+            prop->SetPhononElectrode(new G4CMPPhononElectrode);
+            return prop;
         };
         auto* wall = new G4CMPSurfaceProperty("Wall", 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0);
         wall->AddScatteringProperties(anhCutoff, reflCutoff, anh, diff, spec, GHz, GHz, GHz);
@@ -129,9 +140,10 @@ public:
     void GeneratePrimaries(G4Event* ev) override {
         if (g_mode == "phonon") {
             const G4double u = G4UniformRand();
-            gun_.SetParticleDefinition(u < 0.53539   ? G4PhononTransSlow::Definition()
-                                       : u < 0.90217 ? G4PhononTransFast::Definition()
-                                                     : G4PhononLong::Definition());
+            G4ParticleDefinition* pd = G4PhononLong::Definition();
+            if (u < 0.53539) pd = G4PhononTransSlow::Definition();
+            else if (u < 0.90217) pd = G4PhononTransFast::Definition();
+            gun_.SetParticleDefinition(pd);
             gun_.SetParticleEnergy(7.5e-3 * eV);
             gun_.SetParticleMomentumDirection(G4RandomDirection());
             gun_.GeneratePrimaryVertex(ev);
@@ -156,19 +168,24 @@ public:
         const auto* pd = step->GetTrack()->GetParticleDefinition();
         if (G4CMP::IsPhonon(pd)) ++g_count.phonon_steps;
         else if (G4CMP::IsChargeCarrier(pd)) ++g_count.charge_steps;
-        g_count.edep_eV += step->GetTotalEnergyDeposit() / eV;
+        g_count.edep_eV += step->GetNonIonizingEnergyDeposit() / eV;  // as G4CMP::FillHit
     }
 };
 
 class Tracking : public G4UserTrackingAction {
 public:
-    void PreUserTrackingAction(const G4Track*) override { ++g_count.tracks; }
+    void PreUserTrackingAction(const G4Track* track) override {
+        ++g_count.tracks;
+        const auto* creator = track->GetCreatorProcess();
+        if (creator && creator->GetProcessName().find("Luke") != std::string::npos) ++g_count.luke_phonons;
+    }
 };
 
 class Actions : public G4VUserActionInitialization {
 public:
     void Build() const override {
         SetUserAction(new Primary);
+        SetUserAction(new G4CMPStackingAction);  // attaches G4CMP track info (as in the examples)
         SetUserAction(new Stepping);
         SetUserAction(new Tracking);
     }
@@ -185,12 +202,14 @@ int main(int argc, char** argv) {
     const int events = std::atoi(argv[2]);
     const long seed = argc > 3 ? std::atol(argv[3]) : 12345;
     if (argc > 4) g_voltage = std::atof(argv[4]) * volt;
-    if (g_mode == "charge") setenv("G4CMP_LUKE_SAMPLE", "0", 1);
 
     CLHEP::HepRandom::setTheSeed(seed);
     const auto t0 = std::chrono::steady_clock::now();
     auto* rm = new G4RunManager;
-    G4CMPConfigManager::Instance();
+    // Charge modes: no recombination phonons at charge absorption (CMPMC's default
+    // ChargeRelease::RecordOnly emits none); "charge" also produces no Luke phonons.
+    if (g_mode != "phonon") G4CMPConfigManager::SetGenPhonons(0.);
+    if (g_mode == "charge") G4CMPConfigManager::SetLukeSampling(0.);
     rm->SetUserInitialization(new Detector);
     auto* physics = new G4CMPPhysicsList;
     physics->SetCuts();
@@ -205,9 +224,10 @@ int main(int argc, char** argv) {
     const double init_s = std::chrono::duration<double>(t1 - t0).count();
     const double run_s = std::chrono::duration<double>(t2 - t1).count();
     std::printf("code=G4CMP mode=%s events=%d init_s=%.3f run_s=%.3f us_per_event=%.1f "
-                "steps=%llu phonon_steps=%llu charge_steps=%llu tracks=%llu edep_eV=%.6f\n",
+                "steps=%llu phonon_steps=%llu charge_steps=%llu tracks=%llu edep_eV=%.6f luke_phonons=%llu\n",
                 g_mode.c_str(), events, init_s, run_s, 1e6 * run_s / events, g_count.steps,
-                g_count.phonon_steps, g_count.charge_steps, g_count.tracks, g_count.edep_eV);
+                g_count.phonon_steps, g_count.charge_steps, g_count.tracks, g_count.edep_eV,
+                g_count.luke_phonons);
     delete rm;
     return 0;
 }

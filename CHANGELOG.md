@@ -60,6 +60,9 @@ breaking changes.
 - The project is licensed under GPL-3.0-or-later (`LICENSE`), matching G4CMP, from
   which parts of the code and data are derived (`NOTICE`). SPDX identifiers are added to
   all source files.
+- `benchmarks/`: a single-thread speed comparison with G4CMP on matched workloads
+  (phonon, charge drift, charge drift with Luke phonons), results in
+  `benchmarks/README.md`. Enable with `CMPMC_BUILD_BENCHMARKS`.
 - `cmpmc/cmpmc.hpp` umbrella header and `cmpmc/version.hpp`.
 - `examples/quickstart.cpp` and `examples/custom_excitation.cpp`.
 - Documentation set under `docs/`, plus `CONTRIBUTING.md` and this changelog.

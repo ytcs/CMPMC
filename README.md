@@ -8,7 +8,9 @@ calorimeters, and superconducting qubit substrates.
 CMPMC takes an energy deposit, splits it into electron-hole pairs and phonons, and
 transports every excitation through an anisotropic crystal until it is absorbed. The
 result is the sensor hits (position, time, energy, channel) plus a full energy
-ledger.
+ledger. The physics follows G4CMP and the published literature, but CMPMC runs
+without Geant4 and is **11–77× faster than G4CMP** on the same workloads
+([benchmark](#performance)).
 
 - **No dependencies.** The library needs only a C++20 compiler and the standard
   library. It has no Geant4, ROOT or CLHEP requirement.
@@ -31,6 +33,30 @@ ledger.
 - **Validated.** Each default model has a test that checks it against a closed form,
   a published reference or a conservation law. See
   [docs/validation.md](docs/validation.md).
+
+## Performance
+
+Single-thread wall time per event against G4CMP V10-06-00 on Geant4 11.2.2. Both
+programs run the detector of G4CMP's `examples/phonon`: a Ge cylinder of radius
+3.81 cm and half-height 1.27 cm with Al Kaplan sensor films on both faces.
+
+| Workload | G4CMP | CMPMC | Speed-up |
+|---|---|---|---|
+| 7.5 meV phonon, tracked to absorption | 9.03 ms | 0.58 ms | **16×** (11× with the same (θ, φ) table type) |
+| e⁻/h⁺ pair drifted at 4 V, no Luke-phonon tracking | 367 ms | 4.8 ms | **77×** |
+| e⁻/h⁺ pair at 4 V with all ~3,800 Luke phonons tracked | 3.75 s | 0.16 s | **23×** |
+
+The two codes agree on the physics they compute. Deposited energy matches to 0.4 %
+and the Luke phonon count per pair to 1.8 %. Most of the gain comes from cheaper
+steps: CMPMC has no Geant4 stepping or navigation layer and samples from lookup
+tables rather than with rejection loops. Its charge step control also takes about 3×
+fewer steps per carrier. Both codes parallelise over events, so the ratios apply per
+core.
+
+These are CPU figures. CMPMC does not yet have a GPU backend; the wavefront engines
+under `cmpmc/experimental/` are CPU prototypes of that design. The setup, the
+alignment of the two configurations, and the reproduction steps are in
+[benchmarks/README.md](benchmarks/README.md).
 
 ## Quick start
 
@@ -85,6 +111,7 @@ target_link_libraries(my_app PRIVATE cmpmc::cmpmc)
 | `CMPMC_INSTALL` | ON when top-level | Generate install rules and the `cmpmc` package config |
 | `CMPMC_WARNINGS_AS_ERRORS` | OFF | `-Werror` / `/WX` for tests and examples |
 | `CMPMC_NATIVE_ARCH` | OFF | `-march=native` for tests and examples |
+| `CMPMC_BUILD_BENCHMARKS` | OFF | Build `cmpmc_bench`, the CMPMC side of the G4CMP comparison |
 | `CMPMC_G4CMP_CRYSTALMAPS_DIR` | empty | Optional: a G4CMP `CrystalMaps` directory used to cross-check the presets |
 
 Requirements: CMake ≥ 3.21 and a C++20 compiler. Continuous integration builds with GCC and Clang on Linux.
@@ -100,6 +127,7 @@ Requirements: CMake ≥ 3.21 and a C++20 compiler. Continuous integration builds
 | [docs/extending.md](docs/extending.md) | Adding materials, changing rates, defining new excitation species |
 | [docs/experimental.md](docs/experimental.md) | Modules that are not validated, and how to opt in to them |
 | [docs/limitations.md](docs/limitations.md) | Known limitations and planned work |
+| [benchmarks/README.md](benchmarks/README.md) | Speed comparison with G4CMP: method, results, how to reproduce |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development workflow and the rules for physics changes |
 
